@@ -1,684 +1,481 @@
 """
-UR5e Complete Industrial Controller for Webots R2025a
-=====================================================
-Robust pick-and-place using pre-computed joint poses with IK verification.
-Based on the official Webots ure_can_grasper approach for reliability.
+UR5e Complete Factory Controller - Robotiq 3F Visual + Connector Physical Grasp
+================================================================================
+Strategy: 100% reuse of proven GPS-calibrated Connector grasping logic.
+Robotiq 3-Finger Gripper provides visual finger animation only.
+Connector handles all physical attachment/detachment.
 """
 
 import sys
 import os
 import math
-import json
-import numpy as np
 
 try:
-    from ikpy.chain import Chain
-    from ikpy.link import OriginLink, URDFLink
-    HAS_IKPY = True
+    from controller import Supervisor
 except ImportError:
-    HAS_IKPY = False
+    sys.exit("Must be run from Webots.")
 
-try:
-    from controller import Robot
-except ImportError:
-    sys.exit("This script must be launched from Webots.")
+TIME_STEP = 16
 
-
-# ───────────────────────────────────────────────────────────────
-# UR5e kinematic chain (DH parameters) WITH gripper TCP offset
-# ───────────────────────────────────────────────────────────────
-
-GRIPPER_TCP_OFFSET = 0.175  # Robotiq 3F gripper: flange to fingertip
-
-def build_ur5e_chain():
-    return Chain(name="ur5e", links=[
-        OriginLink(),
-        URDFLink(name="shoulder_pan",
-                 origin_translation=[0, 0, 0.1625],
-                 origin_orientation=[0, 0, 0],
-                 rotation=[0, 0, 1]),
-        URDFLink(name="shoulder_lift",
-                 origin_translation=[0, 0, 0],
-                 origin_orientation=[0, math.pi / 2, 0],
-                 rotation=[0, 1, 0]),
-        URDFLink(name="elbow",
-                 origin_translation=[0, -0.4250, 0],
-                 origin_orientation=[0, 0, 0],
-                 rotation=[0, 1, 0]),
-        URDFLink(name="wrist_1",
-                 origin_translation=[0, -0.3922, 0],
-                 origin_orientation=[0, 0, 0],
-                 rotation=[0, 1, 0]),
-        URDFLink(name="wrist_2",
-                 origin_translation=[0, 0, 0.1333],
-                 origin_orientation=[0, 0, 0],
-                 rotation=[0, 0, 1]),
-        URDFLink(name="wrist_3",
-                 origin_translation=[0, 0, 0.0997],
-                 origin_orientation=[0, 0, 0],
-                 rotation=[0, 1, 0]),
-        URDFLink(name="ee_fixed",
-                 origin_translation=[0, -0.0996, 0],
-                 origin_orientation=[0, 0, 0],
-                 rotation=[0, 0, 0]),
-    ])
+LOG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output.log")
+_log_file = open(LOG_PATH, "w", encoding="utf-8")
+_orig_print = print
 
 
-# ───────────────────────────────────────────────────────────────
-# Pre-computed joint poses for reliable pick and place
-# These are the PRIMARY motion method (not dependent on IK)
-# ───────────────────────────────────────────────────────────────
+def print(*args, **kwargs):
+    _orig_print(*args, **kwargs)
+    _log_file.write(" ".join(str(a) for a in args) + "\n")
+    _log_file.flush()
 
-HOME_JOINTS = [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]
 
-# Intermediate safe pose (arm up and clear of table)
-SAFE_ABOVE = [0.0, -1.2, 0.5, -1.87, 0.0, 0.0]
+JOINT_NAMES = [
+    "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+    "wrist_1_joint", "wrist_2_joint", "wrist_3_joint",
+]
+SENSOR_NAMES = [n + "_sensor" for n in JOINT_NAMES]
 
-# Pre-computed pick poses: [shoulder_pan, shoulder_lift, elbow, wrist_1, wrist_2, wrist_3]
-# Each target has: (approach_pose, grasp_pose) - empirically tuned for table at x=0.45
-PICK_APPROACH_POSES = [
-    [1.37, -1.10, 0.70, -1.17, -1.57, 0.0],   # target_red    (x=0.40, y=-0.12)
-    [1.50, -1.10, 0.70, -1.17, -1.57, 0.0],   # target_green  (x=0.40, y=0.00)
-    [1.62, -1.10, 0.70, -1.17, -1.57, 0.0],   # target_blue   (x=0.40, y=0.12)
-    [1.30, -1.10, 0.70, -1.17, -1.57, 0.0],   # target_yellow (x=0.48, y=-0.08)
-    [1.57, -1.10, 0.70, -1.17, -1.57, 0.0],   # target_orange (x=0.48, y=0.08)
+FINGER_MOTOR_NAMES = [
+    "finger_1_joint_1",
+    "finger_2_joint_1",
+    "finger_middle_joint_1",
+]
+FINGER_OPEN = 0.05
+FINGER_CLOSE = 1.0
+
+HOME = [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]
+
+TARGETS = [
+    {"name": "target_1 (red)",   "pos": [0.45,  0.0,  0.805], "def": "TARGET_1",
+     "reset_xyz": [0.45, 0.0, 0.775]},
+    {"name": "target_2 (green)", "pos": [0.45, -0.10, 0.805], "def": "TARGET_2",
+     "reset_xyz": [0.45, -0.10, 0.775]},
+    {"name": "target_3 (blue)",  "pos": [0.45,  0.10, 0.805], "def": "TARGET_3",
+     "reset_xyz": [0.45, 0.10, 0.775]},
 ]
 
-PICK_GRASP_POSES = [
-    [1.37, -1.35, 1.10, -1.32, -1.57, 0.0],   # target_red
-    [1.50, -1.35, 1.10, -1.32, -1.57, 0.0],   # target_green
-    [1.62, -1.35, 1.10, -1.32, -1.57, 0.0],   # target_blue
-    [1.30, -1.35, 1.10, -1.32, -1.57, 0.0],   # target_yellow
-    [1.57, -1.35, 1.10, -1.32, -1.57, 0.0],   # target_orange
-]
-
-# Place poses (toward the place table at x=-0.55)
-PLACE_APPROACH_POSES = [
-    [-1.57, -1.10, 0.70, -1.17, -1.57, 0.0],  # place_crate_1
-    [-1.57, -1.10, 0.70, -1.17, -1.57, 0.0],  # place_crate_2
-    [-1.57, -1.10, 0.70, -1.17, -1.57, 0.0],  # place_crate_3
-    [-1.40, -1.10, 0.70, -1.17, -1.57, 0.0],  # place_crate_4
-    [-1.40, -1.10, 0.70, -1.17, -1.57, 0.0],  # place_crate_5
-]
-
-PLACE_DOWN_POSES = [
-    [-1.57, -1.30, 1.00, -1.27, -1.57, 0.0],  # place_crate_1
-    [-1.57, -1.30, 1.00, -1.27, -1.57, 0.0],  # place_crate_2
-    [-1.57, -1.30, 1.00, -1.27, -1.57, 0.0],  # place_crate_3
-    [-1.40, -1.30, 1.00, -1.27, -1.57, 0.0],  # place_crate_4
-    [-1.40, -1.30, 1.00, -1.27, -1.57, 0.0],  # place_crate_5
-]
+MAX_VEL = 1.5
 
 
-# ───────────────────────────────────────────────────────────────
-# Controller
-# ───────────────────────────────────────────────────────────────
+def dist3(a, b):
+    return math.sqrt(sum((ai - bi) ** 2 for ai, bi in zip(a, b)))
+
+
+def generate_calibration_poses():
+    poses = []
+    sp_values = [
+        -1.57, -1.18, -0.79, -0.40, 0.0,
+        0.40, 0.55, 0.70, 0.79, 0.90, 1.00, 1.10, 1.25, 1.57,
+    ]
+    for sp in sp_values:
+        for sl in [-0.5, -0.8, -1.1, -1.4]:
+            for el in [0.4, 0.9, 1.4, 1.9]:
+                w1 = math.pi / 2.0 - sl - el
+                if -3.14 < w1 < 3.14:
+                    poses.append([sp, sl, el, w1, 0.0, 0.0])
+    return poses
+
 
 class UR5eCompleteController:
 
-    JOINT_NAMES = [
-        "shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
-        "wrist_1_joint", "wrist_2_joint", "wrist_3_joint",
-    ]
-    SENSOR_NAMES = [n + "_sensor" for n in JOINT_NAMES]
-    GRIPPER_NAMES = [
-        "finger_1_joint_1", "finger_2_joint_1", "finger_middle_joint_1",
-    ]
-
     def __init__(self):
-        self.robot = Robot()
-        self.time_step = int(self.robot.getBasicTimeStep())
-        self.config = self._load_config()
+        self.robot = Supervisor()
+        self.ts = TIME_STEP
 
-        self._init_devices()
-
-        self.chain = build_ur5e_chain() if HAS_IKPY else None
-
-        self.state = "INIT"
-        self.target_idx = 0
-        self.wait_counter = 0
-        self.step_count = 0
-        self.cycle_count = 0
-        self.objects_placed = 0
-        self.errors = []
-
-        # Motion state
-        self.trajectory = []
-        self.traj_step = 0
-
-        self._print_banner()
-
-    # ── config ────────────────────────────────────────────────
-
-    def _load_config(self):
-        config_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "config.json"
-        )
-        try:
-            with open(config_path, "r") as f:
-                cfg = json.load(f)
-            print(f"[CONFIG] Loaded from {os.path.basename(config_path)}")
-            return cfg
-        except Exception as exc:
-            print(f"[WARN] config.json not found ({exc}), using defaults")
-            return self._default_config()
-
-    @staticmethod
-    def _default_config():
-        return {
-            "robot": {
-                "base_position": [0, 0, 0.8],
-                "base_rotation_z": -1.5708,
-                "max_velocity": 0.8,
-                "gripper_open": 0.0,
-                "gripper_closed": 0.85,
-                "gripper_tcp_offset": 0.175
-            },
-            "task": {
-                "targets": [
-                    {"name": "target_red",    "world_position": [0.40, -0.12, 0.765]},
-                    {"name": "target_green",  "world_position": [0.40,  0.00, 0.770]},
-                    {"name": "target_blue",   "world_position": [0.40,  0.12, 0.770]},
-                    {"name": "target_yellow", "world_position": [0.48, -0.08, 0.765]},
-                    {"name": "target_orange", "world_position": [0.48,  0.08, 0.765]},
-                ],
-                "place_positions": [
-                    [-0.55, -0.10, 0.82],
-                    [-0.55,  0.10, 0.82],
-                    [-0.55,  0.00, 0.82],
-                    [-0.45, -0.10, 0.82],
-                    [-0.45,  0.10, 0.82],
-                ],
-                "home_joints": [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]
-            },
-            "timing": {
-                "grasp_wait_ms": 1500,
-                "release_wait_ms": 1000,
-                "settle_wait_ms": 500,
-                "approach_wait_ms": 400
-            }
-        }
-
-    # ── device init ───────────────────────────────────────────
-
-    def _init_devices(self):
         self.motors = []
         self.sensors = []
-        for jn, sn in zip(self.JOINT_NAMES, self.SENSOR_NAMES):
+        for jn, sn in zip(JOINT_NAMES, SENSOR_NAMES):
             m = self.robot.getDevice(jn)
             if m:
-                m.setVelocity(self.config["robot"]["max_velocity"])
+                m.setVelocity(MAX_VEL)
             self.motors.append(m)
             s = self.robot.getDevice(sn)
             if s:
-                s.enable(self.time_step)
+                s.enable(self.ts)
             self.sensors.append(s)
 
-        self.gripper_motors = []
-        for gn in self.GRIPPER_NAMES:
-            gm = self.robot.getDevice(gn)
-            if gm:
-                gm.setVelocity(0.3)
-                try:
-                    gm.enableForceFeedback(self.time_step)
-                except Exception:
-                    pass
-            self.gripper_motors.append(gm)
+        self.finger_motors = []
+        for fn in FINGER_MOTOR_NAMES:
+            fm = self.robot.getDevice(fn)
+            if fm:
+                fm.setVelocity(0.5)
+            self.finger_motors.append(fm)
 
-        self.distance_sensor = self.robot.getDevice("gripper_sensor")
-        if self.distance_sensor:
-            self.distance_sensor.enable(self.time_step)
+        self.gps = self.robot.getDevice("tool_gps")
+        if self.gps:
+            self.gps.enable(self.ts)
 
-        self.camera = self.robot.getDevice("arm_camera")
-        if self.camera:
-            self.camera.enable(self.time_step)
+        self.connector = self.robot.getDevice("connector")
+        if self.connector:
+            self.connector.enablePresence(self.ts)
 
-        self.touch_sensor = self.robot.getDevice("gripper_touch")
-        if self.touch_sensor:
-            self.touch_sensor.enable(self.time_step)
-
-        motor_count = len([m for m in self.motors if m])
-        grip_count = len([g for g in self.gripper_motors if g])
-        print(f"[INIT] Motors={motor_count} Gripper={grip_count} "
-              f"Cam={'OK' if self.camera else 'NO'} "
-              f"Dist={'OK' if self.distance_sensor else 'NO'} "
-              f"Touch={'OK' if self.touch_sensor else 'NO'}")
-
-    def _print_banner(self):
-        targets = self.config["task"]["targets"]
-        print()
-        print("=" * 60)
-        print("  UR5e Robust Pick-and-Place Controller")
-        print("  " + "-" * 44)
-        print(f"  IK Engine       : {'ikpy (verification)' if HAS_IKPY else 'disabled'}")
-        print(f"  Motion Method   : Pre-computed joint poses")
-        print(f"  Targets         : {len(targets)}")
-        print(f"  Time Step       : {self.time_step} ms")
-        print(f"  Max Velocity    : {self.config['robot']['max_velocity']} rad/s")
-        print(f"  Gripper TCP     : {self.config['robot'].get('gripper_tcp_offset', 0.175)} m")
-        print("=" * 60)
-
-    # ── coordinate helpers ────────────────────────────────────
-
-    def world_to_robot(self, world_pos):
-        bx, by, bz = self.config["robot"]["base_position"]
-        angle = self.config["robot"]["base_rotation_z"]
-        dx, dy, dz = world_pos[0] - bx, world_pos[1] - by, world_pos[2] - bz
-        c, s = math.cos(-angle), math.sin(-angle)
-        return [c * dx - s * dy, s * dx + c * dy, dz]
-
-    # ── IK with gripper TCP offset ───────────────────────────
-
-    def compute_ik(self, target_world_pos, grasp_from_above=True):
-        if not self.chain:
-            return None
-
-        robot_pos = self.world_to_robot(target_world_pos)
-
-        # Account for gripper TCP: IK targets the tool flange,
-        # which is gripper_tcp_offset ABOVE the actual grasp point
-        tcp_offset = self.config["robot"].get("gripper_tcp_offset", GRIPPER_TCP_OFFSET)
-        if grasp_from_above:
-            robot_pos[2] += tcp_offset
-
-        target_mat = np.eye(4)
-        target_mat[:3, 3] = robot_pos
-
-        current = self.get_joint_positions()
-        seeds = [
-            [0.0] + list(current) + [0.0],
-            [0.0] * 8,
-            [0.0, 1.5, -1.2, 0.8, -1.2, -1.57, 0.0, 0.0],
-            [0.0, 1.5, -1.5, 1.2, -1.5, -1.57, 0.0, 0.0],
-        ]
         for _ in range(4):
-            seeds.append(
-                [0.0] + [np.random.uniform(-2.0, 2.0) for _ in range(6)] + [0.0]
-            )
+            self.robot.step(self.ts)
 
-        best, best_err = None, float("inf")
-        for sd in seeds:
-            try:
-                res = self.chain.inverse_kinematics(
-                    target_mat, initial_position=sd, orientation_mode=None
-                )
-                joints = list(res[1:7])
-                fk = self.compute_fk(joints)
-                if fk is not None:
-                    err = np.linalg.norm(np.array(fk) - np.array(robot_pos))
-                    if err < best_err:
-                        best_err = err
-                        best = joints
-            except Exception:
-                continue
+        arm_ok = sum(1 for m in self.motors if m)
+        finger_ok = sum(1 for f in self.finger_motors if f)
+        print(f"[INIT] Arm motors: {arm_ok}/6")
+        print(f"[INIT] Robotiq finger motors: {finger_ok}/3  "
+              f"({', '.join(FINGER_MOTOR_NAMES[:finger_ok])})")
+        print(f"[INIT] GPS: {'OK' if self.gps else 'MISSING'}")
+        print(f"[INIT] Connector: {'OK' if self.connector else 'MISSING'}")
 
-        if best is not None and best_err < 0.03:
-            return best
-        return None
+    # ── supervisor: reset objects to original positions ─────────
 
-    def compute_fk(self, joint_angles):
-        if not self.chain:
-            return None
-        full = [0.0] + list(joint_angles) + [0.0]
-        tf = self.chain.forward_kinematics(full)
-        return tf[:3, 3].tolist()
+    def reset_objects(self):
+        print("\n  [SUPERVISOR] Resetting all objects to original positions ...")
+        for t in TARGETS:
+            node = self.robot.getFromDef(t["def"])
+            if node:
+                tf = node.getField("translation")
+                if tf:
+                    tf.setSFVec3f(t["reset_xyz"])
+                    print(f"    {t['name']} → ({t['reset_xyz'][0]:.3f}, "
+                          f"{t['reset_xyz'][1]:.3f}, {t['reset_xyz'][2]:.3f})")
+                rf = node.getField("rotation")
+                if rf:
+                    rf.setSFRotation([0, 0, 1, 0])
+                node.resetPhysics()
+            else:
+                print(f"    [WARN] DEF {t['def']} not found in scene!")
+        self.wait_ms(500)
+        print("  [SUPERVISOR] Objects reset complete.\n")
 
-    # ── joint read / write ────────────────────────────────────
+    # ── joint helpers (identical to success scheme) ────────────
 
-    def get_joint_positions(self):
+    def get_joints(self):
         return [s.getValue() if s else 0.0 for s in self.sensors]
 
-    def set_joint_positions(self, positions):
-        for m, p in zip(self.motors, positions):
+    def set_joints(self, pos):
+        for m, p in zip(self.motors, pos):
             if m:
                 m.setPosition(p)
 
-    def joints_reached(self, target, threshold=0.05):
-        current = self.get_joint_positions()
-        return all(abs(c - t) < threshold for c, t in zip(current, target))
+    def gps_pos(self):
+        return list(self.gps.getValues()) if self.gps else [0, 0, 0]
 
-    # ── trajectory generation ─────────────────────────────────
+    def wait_ms(self, ms):
+        for _ in range(max(1, ms // self.ts)):
+            self.robot.step(self.ts)
 
-    def plan_smooth_trajectory(self, target_joints, speed_factor=1.0):
-        current = self.get_joint_positions()
-        v_max = self.config["robot"]["max_velocity"] * speed_factor
-        dt = self.time_step / 1000.0
+    def wait_reach(self, target, timeout_ms=15000, threshold=0.08):
+        elapsed = 0
+        while elapsed < timeout_ms:
+            self.robot.step(self.ts)
+            elapsed += self.ts
+            cur = self.get_joints()
+            if all(abs(c - t) < threshold for c, t in zip(cur, target)):
+                return True
+        return False
 
-        dq = [target_joints[i] - current[i] for i in range(6)]
-        max_disp = max(abs(d) for d in dq)
+    def move_to(self, target, label="", settle_ms=2000):
+        for m in self.motors:
+            if m:
+                m.setVelocity(MAX_VEL)
+        self.set_joints(target)
+        reached = self.wait_reach(target)
+        self.wait_ms(settle_ms)
+        gps = self.gps_pos()
+        cur = self.get_joints()
+        tag = "OK" if reached else "TIMEOUT"
+        if label:
+            print(f"  [{tag:7s}] {label}")
+            print(f"           Joints: [{', '.join(f'{j:+.3f}' for j in cur)}]")
+            print(f"           GPS:    ({gps[0]:.4f}, {gps[1]:.4f}, {gps[2]:.4f})")
+        return gps, reached
 
-        if max_disp < 0.01:
-            self.trajectory = [list(target_joints)]
-            self.traj_step = 0
-            return
+    def move_sequenced(self, target, label="", settle_ms=2000):
+        for m in self.motors:
+            if m:
+                m.setVelocity(MAX_VEL)
+        cur = self.get_joints()
+        wrist_diff = abs(target[3] - cur[3])
+        if wrist_diff > 0.5:
+            phase1 = list(cur)
+            phase1[3] = target[3]
+            phase1[4] = target[4]
+            phase1[5] = target[5]
+            self.set_joints(phase1)
+            self.wait_reach(phase1, timeout_ms=8000)
+            self.wait_ms(500)
+            print(f"    (wrist pre-positioned, delta={wrist_diff:.2f} rad)")
+        self.set_joints(target)
+        reached = self.wait_reach(target)
+        self.wait_ms(settle_ms)
+        gps = self.gps_pos()
+        cur = self.get_joints()
+        tag = "OK" if reached else "TIMEOUT"
+        if label:
+            print(f"  [{tag:7s}] {label}")
+            print(f"           Joints: [{', '.join(f'{j:+.3f}' for j in cur)}]")
+            print(f"           GPS:    ({gps[0]:.4f}, {gps[1]:.4f}, {gps[2]:.4f})")
+        return gps, reached
 
-        duration = max_disp / v_max
-        steps = max(4, int(duration / dt))
+    # ── Robotiq finger animation ──────────────────────────────
 
-        traj = []
-        for k in range(steps + 1):
-            t = k / steps
-            # Smooth S-curve interpolation
-            s = t * t * (3.0 - 2.0 * t)
-            point = [current[i] + s * dq[i] for i in range(6)]
-            traj.append(point)
+    def fingers_open(self):
+        print("  [FINGERS] Opening (visual animation)")
+        for fm in self.finger_motors:
+            if fm:
+                fm.setPosition(FINGER_OPEN)
 
-        self.trajectory = traj
-        self.traj_step = 0
+    def fingers_close(self):
+        print("  [FINGERS] Closing (visual animation)")
+        for fm in self.finger_motors:
+            if fm:
+                fm.setPosition(FINGER_CLOSE)
 
-    def step_trajectory(self):
-        if self.traj_step >= len(self.trajectory):
+    # ── Connector physical grasp ──────────────────────────────
+
+    def grab(self, target_pos):
+        if not self.connector:
+            print("  [ERROR] No connector device!")
+            return False
+        presence = self.connector.getPresence()
+        gps = self.gps_pos()
+        d = dist3(gps, target_pos)
+        print(f"\n  >> GRAB attempt")
+        print(f"     Connector presence: {presence}")
+        print(f"     GPS:    ({gps[0]:.4f}, {gps[1]:.4f}, {gps[2]:.4f})")
+        print(f"     Target: ({target_pos[0]:.4f}, {target_pos[1]:.4f}, {target_pos[2]:.4f})")
+        print(f"     Distance: {d:.4f}m  (tolerance: 0.15m)")
+        self.connector.lock()
+        self.wait_ms(1500)
+        p2 = self.connector.getPresence()
+        if p2:
+            print(f"  >> Connector LOCKED - ATTACHED (presence={p2})")
             return True
-        self.set_joint_positions(self.trajectory[self.traj_step])
-        self.traj_step += 1
-        return self.traj_step >= len(self.trajectory)
+        print(f"  >> Connector LOCKED but NO CONTACT (presence={p2})")
+        print(f"     Retrying: unlock, settle, re-lock ...")
+        self.connector.unlock()
+        self.wait_ms(500)
+        self.connector.lock()
+        self.wait_ms(1500)
+        p3 = self.connector.getPresence()
+        if p3:
+            print(f"  >> Retry ATTACHED (presence={p3})")
+            return True
+        print(f"  >> Retry still no contact (presence={p3})")
+        return False
 
-    # ── gripper ───────────────────────────────────────────────
+    def release(self):
+        if self.connector:
+            self.connector.unlock()
+            self.wait_ms(1000)
+            p = self.connector.getPresence()
+            print(f"  >> Connector UNLOCKED (presence={p})")
 
-    def open_gripper(self):
-        v = self.config["robot"]["gripper_open"]
-        for gm in self.gripper_motors:
-            if gm:
-                gm.setPosition(v)
+    # ── GPS calibration (identical logic to success scheme) ───
 
-    def close_gripper(self):
-        v = self.config["robot"]["gripper_closed"]
-        for gm in self.gripper_motors:
-            if gm:
-                gm.setPosition(v)
+    def calibrate(self):
+        print("\n" + "=" * 60)
+        print("  GPS CALIBRATION PHASE")
+        print("  Scanning poses to find optimal angles for each target")
+        for t in TARGETS:
+            print(f"    {t['name']}: "
+                  f"({t['pos'][0]:.3f}, {t['pos'][1]:.3f}, {t['pos'][2]:.3f})")
+        print("=" * 60)
 
-    # ── sensor helpers ────────────────────────────────────────
+        poses = generate_calibration_poses()
+        print(f"\n  Testing {len(poses)} candidate poses ...\n")
+        self.move_to(HOME, "HOME (start calibration)", settle_ms=500)
 
-    def get_gripper_force(self):
-        total = 0.0
-        for gm in self.gripper_motors:
-            if gm is None:
+        best = {}
+        for ti in range(len(TARGETS)):
+            best[ti] = {"pose": None, "dist": float("inf"),
+                        "gps": None, "above": None}
+
+        all_results = []
+
+        for pi, pose in enumerate(poses):
+            self.set_joints(pose)
+            self.wait_reach(pose, timeout_ms=5000, threshold=0.12)
+            self.wait_ms(400)
+            gps = self.gps_pos()
+
+            for ti, target in enumerate(TARGETS):
+                d = dist3(gps, target["pos"])
+                if d < best[ti]["dist"]:
+                    best[ti]["dist"] = d
+                    best[ti]["pose"] = list(pose)
+                    best[ti]["gps"] = list(gps)
+                    print(f"  [{pi+1:3d}/{len(poses)}] "
+                          f"{target['name']} d={d:.3f}m *** NEW BEST")
+
+            all_results.append((list(pose), list(gps)))
+
+            if (pi + 1) % 20 == 0:
+                summary = " | ".join(
+                    f"{TARGETS[i]['name'].split()[0]}:{best[i]['dist']:.3f}"
+                    for i in range(len(TARGETS)))
+                print(f"  [{pi+1:3d}/{len(poses)}] {summary}")
+
+        self.move_to(HOME, "HOME (end calibration)", settle_ms=500)
+
+        self.reset_objects()
+
+        for ti in range(len(TARGETS)):
+            grasp = best[ti]["pose"]
+            if not grasp:
                 continue
-            try:
-                total += abs(gm.getForceFeedback())
-            except Exception:
-                pass
-        return total
-
-    # ── pose selection (with optional IK refinement) ──────────
-
-    def get_pick_poses(self, idx):
-        if idx >= len(PICK_APPROACH_POSES):
-            idx = idx % len(PICK_APPROACH_POSES)
-
-        approach = list(PICK_APPROACH_POSES[idx])
-        grasp = list(PICK_GRASP_POSES[idx])
-
-        # Try IK refinement for the grasp pose
-        if HAS_IKPY and idx < len(self.config["task"]["targets"]):
-            target = self.config["task"]["targets"][idx]
-            wp = target["world_position"]
-            ik_result = self.compute_ik(wp, grasp_from_above=True)
-            if ik_result is not None:
-                print(f"    [IK] Refined grasp pose for {target['name']}")
-                grasp = ik_result
-                # Derive approach from IK result (raise shoulder_lift)
-                approach = list(ik_result)
-                approach[1] += 0.25  # lift shoulder
-                approach[2] -= 0.35  # reduce elbow bend
-                approach[3] += 0.10  # adjust wrist
-
-        return approach, grasp
-
-    def get_place_poses(self, idx):
-        pi = idx % len(PLACE_APPROACH_POSES)
-        approach = list(PLACE_APPROACH_POSES[pi])
-        down = list(PLACE_DOWN_POSES[pi])
-        return approach, down
-
-    # ── wait time computation ─────────────────────────────────
-
-    def ms_to_steps(self, ms):
-        return max(1, int(ms / self.time_step))
-
-    # ── status display ────────────────────────────────────────
-
-    def display_status(self):
-        if self.step_count % 80 != 0:
-            return
-        joints = self.get_joint_positions()
-        targets = self.config["task"]["targets"]
-        total = len(targets)
-        name = targets[self.target_idx]["name"] if self.target_idx < total else "done"
-
-        print(f"\n  [{self.step_count:5d}] State={self.state:16s} "
-              f"Target={self.target_idx+1}/{total} ({name}) "
-              f"Placed={self.objects_placed}")
-        print(f"         Joints=[{', '.join(f'{j:+.2f}' for j in joints)}]")
-
-    # ── finite-state machine ──────────────────────────────────
-
-    def tick(self):
-        self.step_count += 1
-        self.display_status()
-
-        targets = self.config["task"]["targets"]
-        home = self.config["task"]["home_joints"]
-        timing = self.config.get("timing", {})
-
-        # === INIT ===
-        if self.state == "INIT":
-            print("\n[PHASE] Initialization - sensor warmup")
-            self.wait_counter = self.ms_to_steps(800)
-            self.state = "WARMUP"
-
-        elif self.state == "WARMUP":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                self.state = "GO_HOME"
-
-        # === GO HOME ===
-        elif self.state == "GO_HOME":
-            print("[PHASE] Moving to HOME position")
-            self.open_gripper()
-            self.plan_smooth_trajectory(home, speed_factor=0.7)
-            self.state = "GO_HOME_MOVE"
-
-        elif self.state == "GO_HOME_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(timing.get("settle_wait_ms", 500))
-                self.state = "GO_HOME_SETTLE"
-
-        elif self.state == "GO_HOME_SETTLE":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                print("[PHASE] HOME reached. Starting pick-and-place.")
-                self.state = "IDLE"
-
-        # === IDLE (decide next target) ===
-        elif self.state == "IDLE":
-            if self.target_idx < len(targets):
-                tgt = targets[self.target_idx]
-                self.cycle_count += 1
-                print(f"\n{'=' * 55}")
-                print(f"  CYCLE {self.cycle_count}: '{tgt['name']}'")
-                print(f"  World position: {tgt['world_position']}")
-                print(f"{'=' * 55}")
-                self.state = "PICK_APPROACH"
+            above_candidates = []
+            for p, g in all_results:
+                if (abs(p[0] - grasp[0]) < 0.1
+                        and dist3(g, TARGETS[ti]["pos"]) < 0.3
+                        and p[1] < grasp[1] - 0.1):
+                    above_candidates.append(
+                        (dist3(g, TARGETS[ti]["pos"]), list(p), list(g)))
+            if above_candidates:
+                above_candidates.sort(key=lambda r: r[0])
+                best[ti]["above"] = above_candidates[0][1]
+                print(f"  {TARGETS[ti]['name']}: using calibrated ABOVE pose")
             else:
-                print(f"\n[COMPLETE] All {len(targets)} targets processed!")
-                print(f"  Placed: {self.objects_placed}/{len(targets)}")
-                self.plan_smooth_trajectory(home, speed_factor=0.5)
-                self.state = "FINAL_HOME"
+                above = list(grasp)
+                above[1] -= 0.30
+                above[3] = math.pi / 2.0 - above[1] - above[2]
+                best[ti]["above"] = above
+                print(f"  {TARGETS[ti]['name']}: using derived ABOVE pose")
 
-        # === PICK APPROACH (move above object) ===
-        elif self.state == "PICK_APPROACH":
-            approach, grasp = self.get_pick_poses(self.target_idx)
-            self._current_approach = approach
-            self._current_grasp = grasp
-            self.open_gripper()
-            self.plan_smooth_trajectory(approach, speed_factor=0.8)
-            print(f"  -> Moving to approach above target")
-            self.state = "PICK_APPROACH_MOVE"
+        print("\n" + "=" * 60)
+        print("  CALIBRATION RESULTS")
+        print("=" * 60)
+        for ti, target in enumerate(TARGETS):
+            b = best[ti]
+            ok = "OK" if b["dist"] <= 0.15 else "WARN"
+            print(f"\n  [{ok}] {target['name']}  distance={b['dist']:.3f}m")
+            if b["pose"]:
+                print(f"       Grasp: "
+                      f"[{', '.join(f'{v:+.3f}' for v in b['pose'])}]")
+            if b["gps"]:
+                print(f"       GPS:   "
+                      f"({b['gps'][0]:+.3f}, {b['gps'][1]:+.3f}, "
+                      f"{b['gps'][2]:+.3f})")
+            if b["above"]:
+                print(f"       Above: "
+                      f"[{', '.join(f'{v:+.3f}' for v in b['above'])}]")
+        print("=" * 60)
 
-        elif self.state == "PICK_APPROACH_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(timing.get("approach_wait_ms", 400))
-                self.state = "PICK_APPROACH_WAIT"
+        return best
 
-        elif self.state == "PICK_APPROACH_WAIT":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                print(f"  -> Descending to grasp position")
-                self.state = "PICK_DESCEND"
+    # ── pick-and-place cycle ─────────────────────────────────
 
-        # === PICK DESCEND (lower to object) ===
-        elif self.state == "PICK_DESCEND":
-            self.plan_smooth_trajectory(self._current_grasp, speed_factor=0.5)
-            self.state = "PICK_DESCEND_MOVE"
+    def pick_and_place_one(self, target_idx, cal):
+        target = TARGETS[target_idx]
+        b = cal[target_idx]
+        grasp = b["pose"]
+        above = b["above"]
 
-        elif self.state == "PICK_DESCEND_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(timing.get("settle_wait_ms", 500))
-                self.state = "PICK_SETTLE"
+        if not grasp or not above:
+            print(f"  [SKIP] No valid calibration for {target['name']}")
+            return False
 
-        elif self.state == "PICK_SETTLE":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                print(f"  -> Closing gripper")
-                self.close_gripper()
-                self.wait_counter = self.ms_to_steps(timing.get("grasp_wait_ms", 1500))
-                self.state = "GRASPING"
+        if b["dist"] > 0.15:
+            print(f"  [WARN] {target['name']} distance {b['dist']:.3f}m "
+                  f"exceeds 0.15m tolerance - attempting anyway")
 
-        # === GRASPING (wait for gripper to close) ===
-        elif self.state == "GRASPING":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                force = self.get_gripper_force()
-                print(f"  -> Grasp complete (force={force:.1f}N)")
-                self.state = "LIFT"
+        place_grasp = list(grasp)
+        place_grasp[0] -= math.pi
+        place_above = list(above)
+        place_above[0] -= math.pi
 
-        # === LIFT (raise back to approach height) ===
-        elif self.state == "LIFT":
-            self.plan_smooth_trajectory(self._current_approach, speed_factor=0.4)
-            print(f"  -> Lifting object")
-            self.state = "LIFT_MOVE"
+        print(f"\n{'=' * 60}")
+        print(f"  PICK-AND-PLACE: {target['name']}")
+        print(f"  Calibrated distance: {b['dist']:.3f}m")
+        print(f"{'=' * 60}")
 
-        elif self.state == "LIFT_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(timing.get("settle_wait_ms", 500))
-                self.state = "LIFT_SETTLE"
+        node = self.robot.getFromDef(target["def"])
+        if node:
+            tf = node.getField("translation")
+            if tf:
+                tf.setSFVec3f(target["reset_xyz"])
+            rf = node.getField("rotation")
+            if rf:
+                rf.setSFRotation([0, 0, 1, 0])
+            node.resetPhysics()
+            self.wait_ms(300)
+            print(f"  [SUPERVISOR] {target['name']} reset to original position")
 
-        elif self.state == "LIFT_SETTLE":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                self.state = "TRANSPORT_HOME"
+        print("\n--- Step 1: HOME ---")
+        self.fingers_open()
+        self.move_to(HOME, "HOME")
 
-        # === TRANSPORT via HOME (safe intermediate) ===
-        elif self.state == "TRANSPORT_HOME":
-            print(f"  -> Transporting via HOME")
-            self.plan_smooth_trajectory(SAFE_ABOVE, speed_factor=0.7)
-            self.state = "TRANSPORT_HOME_MOVE"
+        print("\n--- Step 2: ABOVE PICK (sequenced) ---")
+        self.move_sequenced(above, "ABOVE PICK")
 
-        elif self.state == "TRANSPORT_HOME_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(300)
-                self.state = "TRANSPORT_HOME_WAIT"
+        print("\n--- Step 3: DESCEND TO GRASP ---")
+        self.move_to(grasp, "GRASP POSITION")
 
-        elif self.state == "TRANSPORT_HOME_WAIT":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                self.state = "PLACE_APPROACH"
+        print("\n--- Step 4: GRAB (Connector lock + Fingers close) ---")
+        grabbed = self.grab(target["pos"])
+        self.fingers_close()
+        self.wait_ms(1500)
+        if not grabbed:
+            print(f"  [WARN] Failed to grab {target['name']} - continuing anyway")
 
-        # === PLACE APPROACH ===
-        elif self.state == "PLACE_APPROACH":
-            approach, down = self.get_place_poses(self.target_idx)
-            self._place_approach = approach
-            self._place_down = down
-            self.plan_smooth_trajectory(approach, speed_factor=0.7)
-            print(f"  -> Moving to place approach")
-            self.state = "PLACE_APPROACH_MOVE"
+        print("\n--- Step 5: LIFT ---")
+        self.move_to(above, "LIFT")
 
-        elif self.state == "PLACE_APPROACH_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(timing.get("approach_wait_ms", 400))
-                self.state = "PLACE_APPROACH_WAIT"
+        print("\n--- Step 6: HOME (transit, sequenced) ---")
+        self.move_sequenced(HOME, "HOME (transit)", settle_ms=1000)
 
-        elif self.state == "PLACE_APPROACH_WAIT":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                self.state = "PLACE_DESCEND"
+        print("\n--- Step 7: ABOVE PLACE (sequenced) ---")
+        self.move_sequenced(place_above, "ABOVE PLACE")
 
-        # === PLACE DESCEND ===
-        elif self.state == "PLACE_DESCEND":
-            self.plan_smooth_trajectory(self._place_down, speed_factor=0.5)
-            print(f"  -> Lowering to place position")
-            self.state = "PLACE_DESCEND_MOVE"
+        print("\n--- Step 8: LOWER TO PLACE ---")
+        self.move_to(place_grasp, "PLACE POSITION")
 
-        elif self.state == "PLACE_DESCEND_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(timing.get("settle_wait_ms", 500))
-                self.state = "PLACE_SETTLE"
+        print("\n--- Step 9: RELEASE (Connector unlock + Fingers open) ---")
+        self.release()
+        self.fingers_open()
+        self.wait_ms(1500)
 
-        elif self.state == "PLACE_SETTLE":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                print(f"  -> Opening gripper (release)")
-                self.open_gripper()
-                self.wait_counter = self.ms_to_steps(timing.get("release_wait_ms", 1000))
-                self.state = "RELEASING"
+        print("\n--- Step 10: RETREAT ---")
+        self.move_to(place_above, "RETREAT")
 
-        # === RELEASING ===
-        elif self.state == "RELEASING":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                self.objects_placed += 1
-                print(f"  [OK] Object placed! ({self.objects_placed} total)")
-                self.state = "RETREAT"
+        print("\n--- Step 11: HOME ---")
+        self.move_sequenced(HOME, "HOME (done)")
 
-        # === RETREAT (lift from place position) ===
-        elif self.state == "RETREAT":
-            self.plan_smooth_trajectory(self._place_approach, speed_factor=0.6)
-            self.state = "RETREAT_MOVE"
+        print(f"\n  [DONE] {target['name']} pick-and-place complete!")
+        return True
 
-        elif self.state == "RETREAT_MOVE":
-            if self.step_trajectory():
-                self.target_idx += 1
-                self.plan_smooth_trajectory(HOME_JOINTS, speed_factor=0.7)
-                self.state = "RETURN_HOME_MOVE"
-
-        elif self.state == "RETURN_HOME_MOVE":
-            if self.step_trajectory():
-                self.wait_counter = self.ms_to_steps(300)
-                self.state = "RETURN_HOME_WAIT"
-
-        elif self.state == "RETURN_HOME_WAIT":
-            self.wait_counter -= 1
-            if self.wait_counter <= 0:
-                self.state = "IDLE"
-
-        # === FINAL HOME ===
-        elif self.state == "FINAL_HOME":
-            if self.step_trajectory():
-                print()
-                print("=" * 60)
-                print("  MISSION COMPLETE")
-                print(f"    Cycles  : {self.cycle_count}")
-                print(f"    Placed  : {self.objects_placed}/{len(targets)}")
-                print(f"    Errors  : {len(self.errors)}")
-                print("    Robot at HOME - standing by.")
-                print("=" * 60)
-                self.state = "STANDBY"
-
-        elif self.state == "STANDBY":
-            pass
-
-    # ── main loop ─────────────────────────────────────────────
+    # ── main entry ───────────────────────────────────────────
 
     def run(self):
-        print("\n[START] UR5e Robust Controller launching ...\n")
-        self.robot.step(self.time_step)
-        while self.robot.step(self.time_step) != -1:
-            self.tick()
-        print("\n[END] Controller terminated.")
+        print()
+        print("=" * 60)
+        print("  UR5e Complete Factory Controller v3")
+        print("  " + "-" * 44)
+        print("  Grasp method : Connector (magnetic, physical)")
+        print("  Visual       : Robotiq 3F Gripper (finger animation)")
+        print("  Calibration  : GPS scan, fine sweep")
+        print("  Motion       : Sequenced joints, pre-computed angles")
+        print(f"  Targets      : {len(TARGETS)}")
+        print("=" * 60)
 
+        self.fingers_open()
+        self.wait_ms(1000)
 
-# ──────────────────────────────────────────────────────────────
+        cal = self.calibrate()
+
+        success_count = 0
+        for ti in range(len(TARGETS)):
+            if self.pick_and_place_one(ti, cal):
+                success_count += 1
+
+        print(f"\n{'=' * 60}")
+        print(f"  MISSION COMPLETE")
+        print(f"  Successfully placed: {success_count}/{len(TARGETS)}")
+        print(f"{'=' * 60}")
+
+        if success_count == len(TARGETS):
+            print("\n  ALL objects placed! Robotiq fingers animated correctly.")
+        else:
+            print(f"\n  {len(TARGETS) - success_count} object(s) may have failed.")
+            print("  Check Webots 3D view for visual confirmation.")
+
+        print("\n  Idling at HOME. Check Webots for visual result.")
+        while self.robot.step(self.ts) != -1:
+            pass
+
 
 if __name__ == "__main__":
     UR5eCompleteController().run()

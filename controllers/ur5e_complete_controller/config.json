@@ -2,71 +2,34 @@
   "robot": {
     "base_position": [0, 0, 0.8],
     "base_rotation_z": -1.5708,
-    "max_velocity": 0.8,
-    "gripper_open": 0.0,
-    "gripper_closed": 0.85,
-    "gripper_tcp_offset": 0.175
+    "max_velocity": 1.5,
+    "connector_offset_y": 0.14
   },
   "task": {
     "targets": [
-      {
-        "name": "target_red",
-        "world_position": [0.40, -0.12, 0.765],
-        "type": "box",
-        "color": "red"
-      },
-      {
-        "name": "target_green",
-        "world_position": [0.40, 0.00, 0.770],
-        "type": "cylinder",
-        "color": "green"
-      },
-      {
-        "name": "target_blue",
-        "world_position": [0.40, 0.12, 0.770],
-        "type": "box",
-        "color": "blue"
-      },
-      {
-        "name": "target_yellow",
-        "world_position": [0.48, -0.08, 0.765],
-        "type": "cylinder",
-        "color": "yellow"
-      },
-      {
-        "name": "target_orange",
-        "world_position": [0.48, 0.08, 0.765],
-        "type": "sphere",
-        "color": "orange"
-      }
-    ],
-    "place_positions": [
-      [-0.55, -0.10, 0.82],
-      [-0.55,  0.10, 0.82],
-      [-0.55,  0.00, 0.82],
-      [-0.45, -0.10, 0.82],
-      [-0.45,  0.10, 0.82]
+      {"name": "target_1", "world_position": [0.45,  0.00, 0.805], "color": "red"},
+      {"name": "target_2", "world_position": [0.45, -0.10, 0.805], "color": "green"},
+      {"name": "target_3", "world_position": [0.45,  0.10, 0.805], "color": "blue"}
     ],
     "home_joints": [0.0, -1.5708, 0.0, -1.5708, 0.0, 0.0]
+  },
+  "gripper": {
+    "type": "Robotiq3fGripper",
+    "role": "visual_only",
+    "finger_motors": ["finger_1_joint_1", "finger_2_joint_1", "finger_middle_joint_1"],
+    "finger_open": 0.05,
+    "finger_close": 1.0,
+    "note": "Fingers provide visual animation; Connector handles physical grasp"
+  },
+  "connector": {
+    "model": "magnetic",
+    "distance_tolerance": 0.15,
+    "note": "Hidden connector co-located with GPS at gripper center"
   },
   "timing": {
     "grasp_wait_ms": 1500,
     "release_wait_ms": 1000,
     "settle_wait_ms": 500,
-    "approach_wait_ms": 400
-  },
-  "sensors": {
-    "camera": {
-      "name": "arm_camera",
-      "enabled": true
-    },
-    "distance_sensor": {
-      "name": "gripper_sensor",
-      "enabled": true
-    },
-    "touch_sensor": {
-      "name": "gripper_touch",
-      "enabled": true
-    }
+    "calibration_settle_ms": 400
   }
 }

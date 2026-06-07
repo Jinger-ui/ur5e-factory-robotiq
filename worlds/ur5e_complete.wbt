@@ -18,35 +18,24 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/apartment_structure/protos/Wall.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Roughcast.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/GlossyPaint.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/containers/protos/PlasticCrate.proto"
 
 WorldInfo {
   info [
-    "UR5e Complete Industrial Simulation"
-    "Full factory environment with sensors, IK, path planning"
+    "UR5e Factory with Robotiq 3F Visual + Connector Physical Grasp"
+    "GPS calibration, pre-computed angles, sequenced motion"
   ]
-  title "UR5e Complete Industrial Demo"
-  basicTimeStep 8
-  physicsDisableAngularThreshold 0.1
+  title "UR5e Robotiq Factory Demo"
+  basicTimeStep 16
   contactProperties [
     ContactProperties {
       bounce 0.02
     }
-    ContactProperties {
-      material1 "gripper"
-      material2 "target"
-      coulombFriction [
-        5
-      ]
-      bounce 0
-    }
   ]
 }
 Viewpoint {
-  orientation -0.24998750093742192 0.5999700022498126 0.7599620028497627 0.85
-  position -4.572401388704893 -3.700127863564237 4.689499456793812
+  orientation -0.28 0.62 0.73 0.85
+  position -4.0 -3.2 4.2
   exposure 1.7
-  follow "UR5e"
 }
 TexturedBackground {
   texture "factory"
@@ -212,77 +201,46 @@ DEF SIGNAL_GREEN Solid {
 }
 SolidBox {
   translation 0 0 0.4
-  name "robot_base_pedestal"
+  name "robot_base"
   size 0.4 0.4 0.8
   appearance GalvanizedMetal {
   }
 }
 UR5e {
-  hidden position_0_0 8.390573462013584e-06
-  hidden rotation_1 0 0 1 8.390557933631928e-06
-  hidden position_1_0 -1.5708002275962598
-  hidden rotation_2 0 -1 0 4.227625141806245e-06
-  hidden position_2_0 4.190585926718541e-06
-  hidden rotation_3 0 1 0 4.190592286815469e-06
-  hidden position_3_0 -1.5708003320070052
-  hidden rotation_4 0 -1 0 4.332011291519366e-06
-  hidden position_4_0 -1.6040507514864377e-06
-  hidden rotation_5 0 0 -1 1.6040738392827808e-06
-  hidden position_5_0 -1.6026150859715926e-06
-  hidden rotation_6 0 -1 0 1.6026889872251883e-06
-  hidden position_7_0 -1.833713008771482e-07
-  hidden position_7_1 -1.833710673107821e-07
-  hidden position_7_2 0.04950005272703864
-  hidden rotation_8 0.7068252250615374 0.7073882252399254 2.935195211584963e-06 3.1415978702853273
-  hidden position_8_0 0.049499947303304995
-  hidden rotation_9 0 0 -1 4.2146848510894035e-08
-  hidden position_9_0 7.662654721693089e-09
-  hidden rotation_10 0 0 -1 0.5199999923373451
-  hidden position_10_0 -0.05229999999999584
-  hidden rotation_12 0.7068252250615374 0.7073882252399254 2.9351952941302795e-06 3.1415978702854925
-  hidden position_12_0 0.04949994736338316
-  hidden rotation_13 0 0 -1 4.2146848510894035e-08
-  hidden position_13_0 7.655902911377095e-09
-  hidden rotation_14 0 0 -1 0.5199999923440968
-  hidden position_14_0 -0.05229999999999608
-  hidden rotation_16 0 0 1 5.16191365590357e-08
-  hidden position_16_0 7.660337893390937e-09
-  hidden rotation_17 0 0 -1 0.5199999923396624
-  hidden position_17_0 -0.05230000000000444
   translation 0 0 0.8
   rotation 0 0 1 -1.5708
   controller "ur5e_complete_controller"
+  supervisor TRUE
   selfCollision FALSE
   toolSlot [
     Robotiq3fGripper {
     }
-    Camera {
-      translation 0 0.04 0
-      rotation 0 0 1 1.5708
-      name "arm_camera"
-      fieldOfView 0.785
-      width 320
-      height 240
-      near 0.02
+    Connector {
+      translation 0 0.14 0
+      rotation 1 0 0 -1.5708
+      name "connector"
+      model "magnetic"
+      isLocked FALSE
+      unilateralLock TRUE
+      unilateralUnlock TRUE
+      distanceTolerance 0.15
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
     }
-    DistanceSensor {
-      translation 0 0.1 0
-      rotation 0 0 1 1.570796
-      name "gripper_sensor"
-    }
-    TouchSensor {
-      translation 0 0.12 0
-      name "gripper_touch"
-      boundingObject Box {
-        size 0.04 0.02 0.04
-      }
+    GPS {
+      translation 0 0.14 0
+      name "tool_gps"
     }
   ]
 }
 Table {
   translation 0.5 0 0
   name "pick_table"
-  size 0.8 0.9 0.74
+  size 0.8 0.8 0.74
   feetSize 0.04 0.04
   trayAppearance PBRAppearance {
     baseColor 0.82 0.82 0.78
@@ -293,26 +251,12 @@ Table {
     colorOverride 0.35 0.35 0.33
   }
 }
-Table {
-  translation -0.65 0 0
-  name "place_table"
-  size 0.7 0.9 0.74
-  feetSize 0.04 0.04
-  trayAppearance PBRAppearance {
-    baseColor 0.75 0.8 0.88
-    roughness 0.7
-    metalness 0
-  }
-  legAppearance BrushedAluminium {
-    colorOverride 0.35 0.35 0.33
-  }
-}
-DEF TARGET_RED Solid {
-  translation 0.40 -0.12 0.765
+DEF TARGET_1 Solid {
+  translation 0.45 0 0.775
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.9 0.1 0.1
+        baseColor 0.9 0.12 0.12
         roughness 0.3
         metalness 0.1
       }
@@ -320,18 +264,31 @@ DEF TARGET_RED Solid {
         size 0.05 0.05 0.05
       }
     }
+    Connector {
+      translation 0 0 0.03
+      name "target_conn_1"
+      model "magnetic"
+      isLocked TRUE
+      distanceTolerance 0.15
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
   ]
-  name "target_red"
-  contactMaterial "target"
+  name "target_1"
   boundingObject Box {
     size 0.05 0.05 0.05
   }
   physics Physics {
-    mass 0.2
+    density -1
+    mass 0.5
   }
 }
-DEF TARGET_GREEN Solid {
-  translation 0.40 0.00 0.770
+DEF TARGET_2 Solid {
+  translation 0.45 -0.10 0.775
   children [
     Shape {
       appearance PBRAppearance {
@@ -339,24 +296,35 @@ DEF TARGET_GREEN Solid {
         roughness 0.3
         metalness 0.1
       }
-      geometry Cylinder {
-        height 0.06
-        radius 0.025
+      geometry Box {
+        size 0.05 0.05 0.05
       }
     }
+    Connector {
+      translation 0 0 0.03
+      name "target_conn_2"
+      model "magnetic"
+      isLocked TRUE
+      distanceTolerance 0.15
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
   ]
-  name "target_green"
-  contactMaterial "target"
-  boundingObject Cylinder {
-    height 0.06
-    radius 0.025
+  name "target_2"
+  boundingObject Box {
+    size 0.05 0.05 0.05
   }
   physics Physics {
-    mass 0.15
+    density -1
+    mass 0.5
   }
 }
-DEF TARGET_BLUE Solid {
-  translation 0.40 0.12 0.770
+DEF TARGET_3 Solid {
+  translation 0.45 0.10 0.775
   children [
     Shape {
       appearance PBRAppearance {
@@ -365,81 +333,97 @@ DEF TARGET_BLUE Solid {
         metalness 0.1
       }
       geometry Box {
-        size 0.04 0.04 0.06
+        size 0.05 0.05 0.05
       }
     }
+    Connector {
+      translation 0 0 0.03
+      name "target_conn_3"
+      model "magnetic"
+      isLocked TRUE
+      distanceTolerance 0.15
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
   ]
-  name "target_blue"
-  contactMaterial "target"
+  name "target_3"
   boundingObject Box {
-    size 0.04 0.04 0.06
+    size 0.05 0.05 0.05
   }
   physics Physics {
-    mass 0.18
+    density -1
+    mass 0.5
   }
 }
-DEF TARGET_YELLOW Solid {
-  translation 0.48 -0.08 0.765
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.95 0.85 0.1
-        roughness 0.3
-        metalness 0.1
-      }
-      geometry Cylinder {
-        height 0.05
-        radius 0.028
-      }
-    }
-  ]
-  name "target_yellow"
-  contactMaterial "target"
-  boundingObject Cylinder {
-    height 0.05
-    radius 0.028
+Table {
+  translation -0.5 0 0
+  name "place_table"
+  size 0.6 0.8 0.74
+  feetSize 0.04 0.04
+  trayAppearance PBRAppearance {
+    baseColor 0.7 0.78 0.88
+    roughness 0.7
+    metalness 0
   }
-  physics Physics {
-    mass 0.14
+  legAppearance BrushedAluminium {
+    colorOverride 0.35 0.35 0.33
   }
 }
-DEF TARGET_ORANGE Solid {
-  translation 0.48 0.08 0.765
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.95 0.5 0.05
-        roughness 0.3
-        metalness 0.1
-      }
-      geometry Sphere {
-        radius 0.025
-      }
-    }
-  ]
-  name "target_orange"
-  contactMaterial "target"
-  boundingObject Sphere {
-    radius 0.025
-  }
-  physics Physics {
-    mass 0.12
+SolidBox {
+  translation -0.5 0 0.745
+  name "container_bottom"
+  size 0.24 0.24 0.01
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
   }
 }
-PlasticCrate {
-  translation -0.55 -0.10 0.74
-  name "place_crate_1"
-  size 0.30 0.25 0.12
-  mass 0.4
+SolidBox {
+  translation -0.5 -0.115 0.80
+  name "container_wall_front"
+  size 0.24 0.01 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
 }
-PlasticCrate {
-  translation -0.55 0.10 0.74
-  name "place_crate_2"
-  size 0.30 0.25 0.12
-  mass 0.4
+SolidBox {
+  translation -0.5 0.115 0.80
+  name "container_wall_back"
+  size 0.24 0.01 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+SolidBox {
+  translation -0.62 0 0.80
+  name "container_wall_left"
+  size 0.01 0.24 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+SolidBox {
+  translation -0.38 0 0.80
+  name "container_wall_right"
+  size 0.01 0.24 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
 }
 ConveyorBelt {
-  hidden translation_1 0 0 0.4499960760000001
   translation 0 2.8 0
   name "conveyor_main"
   size 6 0.5 0.6
@@ -481,8 +465,8 @@ CardboardBox {
   size 0.35 0.25 0.25
 }
 FireExtinguisher {
-  translation -4.500000001297833 3.5000000017368507 -0.0011771987859746647
-  rotation 0.0017626919649409722 0.0004493970146841165 0.9999983454783112 0.7854011699544075
+  translation -4.5 3.5 0
+  rotation 0 0 1 0.7854
 }
 SolidBox {
   translation 3.5 0 0.35
