@@ -30,3 +30,8 @@ desktop.ini
 *.png
 *.bmp
 textures/
+output.log
+
+# RL artifacts (large binaries)
+rl_training/models/*.zip
+rl_training/logs/**/events.out.tfevents.*

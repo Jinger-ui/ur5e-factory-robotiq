@@ -1,0 +1,413 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/ThreadMetalPlate.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/universal_robots/protos/UR5e.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/tables/protos/Table.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/BrushedAluminium.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/solids/protos/SolidBox.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/GalvanizedMetal.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/containers/protos/CardboardBox.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/conveyors/protos/ConveyorBelt.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/CorrugatedMetal.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/pallet/protos/WoodenPalletStack.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/factory/fire_extinguisher/protos/FireExtinguisher.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/apartment_structure/protos/Wall.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Roughcast.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/GlossyPaint.proto"
+
+WorldInfo {
+  info [
+    "UR5e Factory Final - Robotiq 3F + Connector Ball Grasp"
+    "GPS calibration, Connector physical, Robotiq visual"
+  ]
+  title "UR5e Factory Final"
+  basicTimeStep 32
+  contactProperties [
+    ContactProperties {
+      coulombFriction [10]
+      bounce 0.01
+      softCFM 0.0001
+    }
+  ]
+}
+Viewpoint {
+  orientation -0.28 0.62 0.73 0.85
+  position -4.0 -3.2 4.2
+  exposure 1.7
+}
+TexturedBackground {
+  texture "factory"
+}
+TexturedBackgroundLight {
+}
+PointLight {
+  attenuation 0 0 1
+  intensity 0.5
+  location 0 0 4
+  castShadows TRUE
+}
+Floor {
+  size 10 8
+  appearance ThreadMetalPlate {
+  }
+}
+Wall {
+  translation -5 0 0
+  rotation 0 0 1 1.5708
+  name "wall_left"
+  size 8 0.2 2.6
+  appearance Roughcast {
+    textureTransform TextureTransform {
+      scale 2 1
+    }
+  }
+}
+Wall {
+  translation 5 0 0
+  rotation 0 0 1 1.5708
+  name "wall_right"
+  size 8 0.2 2.6
+  appearance Roughcast {
+    textureTransform TextureTransform {
+      scale 2 1
+    }
+  }
+}
+Wall {
+  translation 0 4 0
+  name "wall_back"
+  size 10 0.2 2.6
+  appearance Roughcast {
+    textureTransform TextureTransform {
+      scale 2 1
+    }
+  }
+}
+Wall {
+  translation 0 -4 0
+  name "wall_front"
+  size 10 0.2 2.6
+  appearance Roughcast {
+    textureTransform TextureTransform {
+      scale 2 1
+    }
+  }
+}
+SolidBox {
+  translation 1.5 0 0.5
+  name "safety_fence_right"
+  size 0.05 2.8 1
+  appearance GlossyPaint {
+    baseColor 0.9 0.75 0
+  }
+}
+SolidBox {
+  translation -1.8 0 0.5
+  name "safety_fence_left"
+  size 0.05 2.8 1
+  appearance GlossyPaint {
+    baseColor 0.9 0.75 0
+  }
+}
+SolidBox {
+  translation 0 1.4 0.5
+  name "safety_fence_back"
+  size 3.65 0.05 1
+  appearance GlossyPaint {
+    baseColor 0.9 0.75 0
+  }
+}
+SolidBox {
+  translation 0 -1.4 0.5
+  name "safety_fence_front"
+  size 3.65 0.05 1
+  appearance GlossyPaint {
+    baseColor 0.9 0.75 0
+  }
+}
+DEF SIGNAL_POLE Solid {
+  translation 2 -1.6 0.75
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.3 0.3
+        roughness 0.4
+        metalness 0.9
+      }
+      geometry Cylinder {
+        height 1.5
+        radius 0.025
+      }
+    }
+  ]
+  name "signal_pole"
+  boundingObject Cylinder {
+    height 1.5
+    radius 0.025
+  }
+}
+DEF SIGNAL_RED Solid {
+  translation 2 -1.6 1.6
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.9 0.05 0.05
+        roughness 0.2
+        metalness 0
+        emissiveColor 0.5 0 0
+      }
+      geometry Sphere {
+        radius 0.06
+      }
+    }
+  ]
+  name "signal_red"
+}
+DEF SIGNAL_YELLOW Solid {
+  translation 2 -1.6 1.45
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.8 0.05
+        roughness 0.2
+        metalness 0
+        emissiveColor 0.5 0.4 0
+      }
+      geometry Sphere {
+        radius 0.06
+      }
+    }
+  ]
+  name "signal_yellow"
+}
+DEF SIGNAL_GREEN Solid {
+  translation 2 -1.6 1.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.9 0.05
+        roughness 0.2
+        metalness 0
+        emissiveColor 0 0.5 0
+      }
+      geometry Sphere {
+        radius 0.06
+      }
+    }
+  ]
+  name "signal_green"
+}
+SolidBox {
+  translation 0 0 0.4
+  name "robot_base"
+  size 0.4 0.4 0.8
+  appearance GalvanizedMetal {
+  }
+}
+UR5e {
+  translation 0 0 0.8
+  rotation 0 0 1 -1.5708
+  controller "ur5e_final"
+  supervisor TRUE
+  selfCollision FALSE
+  toolSlot [
+    Robotiq3fGripper {
+    }
+    Connector {
+      translation 0 0.14 0
+      rotation 1 0 0 -1.5708
+      name "connector"
+      model "magnetic"
+      isLocked FALSE
+      unilateralLock TRUE
+      unilateralUnlock TRUE
+      distanceTolerance 0.2
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
+    GPS {
+      translation 0 0.14 0
+      name "tool_gps"
+    }
+  ]
+}
+Table {
+  translation 0.5 0 0
+  name "pick_table"
+  size 0.8 0.8 0.74
+  feetSize 0.04 0.04
+  trayAppearance PBRAppearance {
+    baseColor 0.82 0.82 0.78
+    roughness 0.7
+    metalness 0
+  }
+  legAppearance BrushedAluminium {
+    colorOverride 0.35 0.35 0.33
+  }
+}
+DEF BALL Solid {
+  translation 0.45 0 0.77
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.15 0.05
+        roughness 0.3
+        metalness 0
+        emissiveColor 0.2 0.02 0.01
+      }
+      geometry Sphere {
+        radius 0.03
+      }
+    }
+    Connector {
+      translation 0 0 0.03
+      name "ball_connector"
+      model "magnetic"
+      isLocked TRUE
+      distanceTolerance 0.2
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
+  ]
+  name "ball"
+  boundingObject Sphere {
+    radius 0.03
+  }
+  physics Physics {
+    density -1
+    mass 0.1
+    damping Damping {
+      linear 0.8
+      angular 0.8
+    }
+  }
+}
+Table {
+  translation -0.5 0 0
+  name "place_table"
+  size 0.6 0.8 0.74
+  feetSize 0.04 0.04
+  trayAppearance PBRAppearance {
+    baseColor 0.7 0.78 0.88
+    roughness 0.7
+    metalness 0
+  }
+  legAppearance BrushedAluminium {
+    colorOverride 0.35 0.35 0.33
+  }
+}
+SolidBox {
+  translation -0.5 0 0.745
+  name "container_bottom"
+  size 0.24 0.24 0.01
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+SolidBox {
+  translation -0.5 -0.115 0.80
+  name "container_wall_front"
+  size 0.24 0.01 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+SolidBox {
+  translation -0.5 0.115 0.80
+  name "container_wall_back"
+  size 0.24 0.01 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+SolidBox {
+  translation -0.62 0 0.80
+  name "container_wall_left"
+  size 0.01 0.24 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+SolidBox {
+  translation -0.38 0 0.80
+  name "container_wall_right"
+  size 0.01 0.24 0.10
+  appearance PBRAppearance {
+    baseColor 0.45 0.50 0.55
+    roughness 0.6
+    metalness 0.3
+  }
+}
+ConveyorBelt {
+  translation 0 2.8 0
+  name "conveyor_main"
+  size 6 0.5 0.6
+  appearance CorrugatedMetal {
+    textureTransform TextureTransform {
+      scale 6 3.1
+    }
+  }
+  borderHeight 0
+  speed 0.15
+}
+WoodenPalletStack {
+  translation 3.5 -2.5 0
+  palletNumber 3
+  palletSize 0.8 1 0.11
+}
+SolidBox {
+  translation -3.5 -2 0.6
+  name "storage_shelf_1"
+  size 1.8 0.5 1.2
+  appearance GalvanizedMetal {
+  }
+}
+SolidBox {
+  translation -3.5 -2 1.3
+  name "shelf_top_1"
+  size 1.8 0.5 0.05
+  appearance GalvanizedMetal {
+  }
+}
+CardboardBox {
+  translation 3.5 2.8 0.7
+  name "cardboard_1"
+  size 0.3 0.3 0.3
+}
+CardboardBox {
+  translation -3.2 2.8 0.7
+  name "cardboard_2"
+  size 0.35 0.25 0.25
+}
+FireExtinguisher {
+  translation -4.5 3.5 0
+  rotation 0 0 1 0.7854
+}
+SolidBox {
+  translation 3.5 0 0.35
+  name "workbench_2"
+  size 1.5 0.7 0.7
+  appearance BrushedAluminium {
+    colorOverride 0.4 0.42 0.4
+  }
+}
