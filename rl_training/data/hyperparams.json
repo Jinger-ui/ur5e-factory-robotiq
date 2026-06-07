@@ -1,0 +1,51 @@
+{
+  "algorithm": "SAC",
+  "policy": "MlpPolicy",
+  "learning_rate": 3e-4,
+  "batch_size": 256,
+  "buffer_size": 100000,
+  "total_timesteps": 50000,
+  "gamma": 0.99,
+  "tau": 0.005,
+  "learning_starts": 1000,
+  "checkpoint_freq": 10000,
+  "observation_space": {
+    "dim": 21,
+    "components": [
+      "joint_angles (6)",
+      "joint_velocities (6)",
+      "finger_positions (3)",
+      "ball_position (3)",
+      "end_effector_position (3)"
+    ]
+  },
+  "action_space": {
+    "dim": 7,
+    "components": [
+      "joint_position_deltas (6, range [-0.1, 0.1] rad)",
+      "gripper_action (1, range [-1, 1])"
+    ]
+  },
+  "reward": {
+    "distance_weight": -2.0,
+    "approach_shaping": 30.0,
+    "proximity_bonus_015": 2.0,
+    "proximity_bonus_008": 5.0,
+    "proximity_bonus_004": 10.0,
+    "connector_bonus": 20.0,
+    "lift_weight": 200.0,
+    "success_bonus": 1000.0,
+    "time_penalty": -0.05,
+    "action_smoothness": -0.01
+  },
+  "environment": {
+    "max_steps": 400,
+    "sub_steps": 4,
+    "success_height": 0.20,
+    "table_height": 0.74,
+    "ball_radius": 0.03,
+    "ball_mass_kg": 0.05,
+    "randomize_ball": true,
+    "rand_range": 0.05
+  }
+}

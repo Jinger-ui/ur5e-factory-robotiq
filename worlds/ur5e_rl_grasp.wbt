@@ -1,0 +1,128 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/Floor.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/universal_robots/protos/UR5e.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/tables/protos/Table.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/BrushedAluminium.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/solids/protos/SolidBox.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/GalvanizedMetal.proto"
+
+WorldInfo {
+  info [
+    "UR5e RL Grasping Training Environment"
+    "Robotiq 3F Gripper + Connector for robust grasping"
+  ]
+  title "UR5e RL Grasp Training"
+  basicTimeStep 16
+  contactProperties [
+    ContactProperties {
+      coulombFriction [1.5]
+      bounce 0.01
+      softCFM 0.001
+    }
+  ]
+}
+Viewpoint {
+  orientation -0.35 0.55 0.76 0.95
+  position -2.5 -2.5 3.0
+  exposure 1.7
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+Floor {
+  size 4 4
+}
+SolidBox {
+  translation 0 0 0.4
+  name "robot_base"
+  size 0.4 0.4 0.8
+  appearance GalvanizedMetal {
+  }
+}
+UR5e {
+  translation 0 0 0.8
+  rotation 0 0 1 -1.5708
+  controller "ur5e_rl_controller"
+  supervisor TRUE
+  selfCollision FALSE
+  toolSlot [
+    Robotiq3fGripper {
+    }
+    Connector {
+      translation 0 0.14 0
+      rotation 1 0 0 -1.5708
+      name "connector"
+      model "magnetic"
+      isLocked FALSE
+      unilateralLock TRUE
+      unilateralUnlock TRUE
+      distanceTolerance 0.15
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
+    GPS {
+      translation 0 0.14 0
+      name "tool_gps"
+    }
+  ]
+}
+Table {
+  translation 0.5 0 0
+  name "pick_table"
+  size 0.8 0.8 0.74
+  feetSize 0.04 0.04
+  trayAppearance PBRAppearance {
+    baseColor 0.82 0.82 0.78
+    roughness 0.7
+    metalness 0
+  }
+  legAppearance BrushedAluminium {
+    colorOverride 0.35 0.35 0.33
+  }
+}
+DEF BALL Solid {
+  translation 0.45 0 0.77
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.2 0.1
+        roughness 0.3
+        metalness 0
+        emissiveColor 0.15 0.02 0.01
+      }
+      geometry Sphere {
+        radius 0.03
+      }
+    }
+    Connector {
+      translation 0 0 0.03
+      name "ball_connector"
+      model "magnetic"
+      isLocked TRUE
+      distanceTolerance 0.15
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
+  ]
+  name "ball"
+  boundingObject Sphere {
+    radius 0.03
+  }
+  physics Physics {
+    density -1
+    mass 0.05
+  }
+}

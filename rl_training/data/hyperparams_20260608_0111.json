@@ -1,0 +1,20 @@
+{
+  "algorithm": "SAC",
+  "device": "cuda",
+  "learning_rate": 0.0003,
+  "batch_size": 256,
+  "buffer_size": 100000,
+  "total_timesteps": 50000,
+  "gamma": 0.99,
+  "tau": 0.005,
+  "learning_starts": 1000,
+  "checkpoint_freq": 10000,
+  "env": {
+    "max_steps": 400,
+    "sub_steps": 4,
+    "success_height": 0.2,
+    "randomize_ball": true,
+    "rand_range": 0.05
+  },
+  "run_name": "20260608_0111"
+}
