@@ -237,6 +237,27 @@ UR5e {
       translation 0 0.14 0
       name "tool_gps"
     }
+    Camera {
+      translation 0 0.15 0
+      rotation 1 0 0 1.5708
+      name "arm_camera"
+      fieldOfView 1.2
+      width 320
+      height 240
+      near 0.01
+      far 3
+      recognition Recognition {
+        maxRange 3
+        maxObjects 10
+        frameColor 0 1 0
+        frameThickness 2
+      }
+    }
+    Display {
+      name "arm_display"
+      width 320
+      height 240
+    }
   ]
 }
 Table {
@@ -253,8 +274,9 @@ Table {
     colorOverride 0.35 0.35 0.33
   }
 }
-DEF BALL Solid {
-  translation 0.45 0 0.77
+DEF BALL1 Solid {
+  translation 0.45 0.08 0.77
+  recognitionColors [ 1 0 0 ]
   children [
     Shape {
       appearance PBRAppearance {
@@ -269,7 +291,7 @@ DEF BALL Solid {
     }
     Connector {
       translation 0 0 0.03
-      name "ball_connector"
+      name "ball1_connector"
       model "magnetic"
       isLocked TRUE
       distanceTolerance 0.2
@@ -281,7 +303,49 @@ DEF BALL Solid {
       shearStrength -1
     }
   ]
-  name "ball"
+  name "ball1"
+  boundingObject Sphere {
+    radius 0.03
+  }
+  physics Physics {
+    density -1
+    mass 0.1
+    damping Damping {
+      linear 0.8
+      angular 0.8
+    }
+  }
+}
+DEF BALL2 Solid {
+  translation 0.45 -0.08 0.77
+  recognitionColors [ 0 0 1 ]
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.4 1
+        roughness 0.3
+        metalness 0
+        emissiveColor 0.02 0.08 0.3
+      }
+      geometry Sphere {
+        radius 0.03
+      }
+    }
+    Connector {
+      translation 0 0 0.03
+      name "ball2_connector"
+      model "magnetic"
+      isLocked TRUE
+      distanceTolerance 0.2
+      axisTolerance 3.15
+      rotationTolerance 3.15
+      numberOfRotations 0
+      snap TRUE
+      tensileStrength -1
+      shearStrength -1
+    }
+  ]
+  name "ball2"
   boundingObject Sphere {
     radius 0.03
   }
@@ -308,54 +372,106 @@ Table {
     colorOverride 0.35 0.35 0.33
   }
 }
+# ===== LEFT CONTAINER (RED) =====
 SolidBox {
-  translation -0.5 0 0.745
-  name "container_bottom"
-  size 0.24 0.24 0.01
+  translation -0.5 0.13 0.745
+  name "red_container_bottom"
+  size 0.24 0.22 0.01
   appearance PBRAppearance {
-    baseColor 0.45 0.50 0.55
-    roughness 0.6
-    metalness 0.3
+    baseColor 0.85 0.15 0.1
+    roughness 0.5
+    metalness 0.2
   }
 }
 SolidBox {
-  translation -0.5 -0.115 0.80
-  name "container_wall_front"
+  translation -0.5 0.025 0.80
+  name "red_container_wall_front"
   size 0.24 0.01 0.10
   appearance PBRAppearance {
-    baseColor 0.45 0.50 0.55
-    roughness 0.6
-    metalness 0.3
+    baseColor 0.85 0.15 0.1
+    roughness 0.5
+    metalness 0.2
   }
 }
 SolidBox {
-  translation -0.5 0.115 0.80
-  name "container_wall_back"
+  translation -0.5 0.235 0.80
+  name "red_container_wall_back"
   size 0.24 0.01 0.10
   appearance PBRAppearance {
-    baseColor 0.45 0.50 0.55
-    roughness 0.6
-    metalness 0.3
+    baseColor 0.85 0.15 0.1
+    roughness 0.5
+    metalness 0.2
   }
 }
 SolidBox {
-  translation -0.62 0 0.80
-  name "container_wall_left"
-  size 0.01 0.24 0.10
+  translation -0.615 0.13 0.80
+  name "red_container_wall_left"
+  size 0.01 0.22 0.10
   appearance PBRAppearance {
-    baseColor 0.45 0.50 0.55
-    roughness 0.6
-    metalness 0.3
+    baseColor 0.85 0.15 0.1
+    roughness 0.5
+    metalness 0.2
   }
 }
 SolidBox {
-  translation -0.38 0 0.80
-  name "container_wall_right"
-  size 0.01 0.24 0.10
+  translation -0.385 0.13 0.80
+  name "red_container_wall_right"
+  size 0.01 0.22 0.10
   appearance PBRAppearance {
-    baseColor 0.45 0.50 0.55
-    roughness 0.6
-    metalness 0.3
+    baseColor 0.85 0.15 0.1
+    roughness 0.5
+    metalness 0.2
+  }
+}
+# ===== RIGHT CONTAINER (BLUE) =====
+SolidBox {
+  translation -0.5 -0.13 0.745
+  name "blue_container_bottom"
+  size 0.24 0.22 0.01
+  appearance PBRAppearance {
+    baseColor 0.1 0.3 0.85
+    roughness 0.5
+    metalness 0.2
+  }
+}
+SolidBox {
+  translation -0.5 -0.235 0.80
+  name "blue_container_wall_front"
+  size 0.24 0.01 0.10
+  appearance PBRAppearance {
+    baseColor 0.1 0.3 0.85
+    roughness 0.5
+    metalness 0.2
+  }
+}
+SolidBox {
+  translation -0.5 -0.025 0.80
+  name "blue_container_wall_back"
+  size 0.24 0.01 0.10
+  appearance PBRAppearance {
+    baseColor 0.1 0.3 0.85
+    roughness 0.5
+    metalness 0.2
+  }
+}
+SolidBox {
+  translation -0.615 -0.13 0.80
+  name "blue_container_wall_left"
+  size 0.01 0.22 0.10
+  appearance PBRAppearance {
+    baseColor 0.1 0.3 0.85
+    roughness 0.5
+    metalness 0.2
+  }
+}
+SolidBox {
+  translation -0.385 -0.13 0.80
+  name "blue_container_wall_right"
+  size 0.01 0.22 0.10
+  appearance PBRAppearance {
+    baseColor 0.1 0.3 0.85
+    roughness 0.5
+    metalness 0.2
   }
 }
 ConveyorBelt {
