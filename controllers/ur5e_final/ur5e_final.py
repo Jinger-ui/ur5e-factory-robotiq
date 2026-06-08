@@ -1,8 +1,8 @@
 """
-UR5e Final Factory Controller v7 — Vision-Guided Dual-Ball Grasp
+UR5e Final Factory Controller v8 — Color-Sorting Dual-Ball Grasp
 ================================================================
-Uses Webots Camera Recognition API + OpenCV HSV color detection
-to identify and locate balls, then picks them into the container.
+Red ball -> LEFT red container, Blue ball -> RIGHT blue container.
+Uses Webots Camera Recognition API + OpenCV HSV color detection.
 
 References:
   - BerkeleyAutomation/gqcnn (Dex-Net architecture inspiration)
@@ -76,12 +76,14 @@ PLACE_POSES = {
         "above":  [_sp_place_base - _red_y_off, -0.800, 1.900, 0.471, 0.0, 0.0],
         "bounds": {"x_min": -0.615, "x_max": -0.385,
                    "y_min": 0.025,  "y_max": 0.235, "z_min": 0.73},
+        "label":  "LEFT (RED)",
     },
     "BLUE": {
         "place":  [_sp_place_base - _blue_y_off, -0.500, 1.900, 0.171, 0.0, 0.0],
         "above":  [_sp_place_base - _blue_y_off, -0.800, 1.900, 0.471, 0.0, 0.0],
         "bounds": {"x_min": -0.615, "x_max": -0.385,
                    "y_min": -0.235, "y_max": -0.025, "z_min": 0.73},
+        "label":  "RIGHT (BLUE)",
     },
 }
 
@@ -411,15 +413,22 @@ class UR5eFinalController:
 
     def pick_and_place(self, ball_info, idx, total):
         name = ball_info["name"]
+        color = ball_info["color_label"]
         pick_y = ball_info["start"][1]
         sp_delta = sp_offset_for(pick_y)
 
         grasp = list(BASE_GRASP); grasp[0] += sp_delta
         above = list(BASE_ABOVE); above[0] += sp_delta
 
+        place_cfg = PLACE_POSES[color]
+        place_angles = place_cfg["place"]
+        above_place = place_cfg["above"]
+        target_label = place_cfg["label"]
+
         print(f"\n{'=' * 60}")
-        print(f"  TASK {idx}/{total}: {name} ({ball_info['color_label']})")
+        print(f"  TASK {idx}/{total}: {name} ({color})")
         print(f"  Pick Y={pick_y:+.3f}  SP offset={sp_delta:+.4f}")
+        print(f"  Place target: {target_label} container")
         print(f"{'=' * 60}")
 
         print("\n--- HOME ---")
@@ -428,12 +437,10 @@ class UR5eFinalController:
         print("\n--- ABOVE PICK (vision scan) ---")
         self.fingers_open()
         self.move_sequenced(above, "ABOVE PICK")
-
         self.vision_scan_report(ball_info)
 
         print("\n--- DESCEND TO GRASP ---")
         self.move_to(grasp, "GRASP")
-
         self.vision_scan_report(ball_info)
 
         print("\n--- GRAB ---")
@@ -450,11 +457,11 @@ class UR5eFinalController:
         print("\n--- TRANSIT HOME ---")
         self.move_sequenced(HOME, "HOME transit")
 
-        print("\n--- ABOVE PLACE ---")
-        self.move_sequenced(BASE_ABOVE_PLACE, "ABOVE PLACE")
+        print(f"\n--- ABOVE PLACE ({target_label}) ---")
+        self.move_sequenced(above_place, "ABOVE PLACE")
 
-        print("\n--- LOWER TO PLACE ---")
-        self.move_to(BASE_PLACE, "PLACE")
+        print(f"\n--- LOWER TO PLACE ({target_label}) ---")
+        self.move_to(place_angles, "PLACE")
         self.wait_ms(4000)
 
         print("\n--- RELEASE ---")
@@ -463,12 +470,12 @@ class UR5eFinalController:
         self.wait_ms(5000)
 
         ball_final = self.get_ball_pos(ball_info)
-        in_container = self.pos_in_container(ball_final)
+        in_container = self.pos_in_container(ball_final, color)
         print(f"\n  {name} final: ({ball_final[0]:.4f}, {ball_final[1]:.4f}, {ball_final[2]:.4f})")
-        print(f"  In container: {'YES' if in_container else 'NO'}")
+        print(f"  In {target_label}: {'YES' if in_container else 'NO'}")
 
         print("\n--- RETREAT & HOME ---")
-        self.move_to(BASE_ABOVE_PLACE, "RETREAT")
+        self.move_to(above_place, "RETREAT")
         self.move_sequenced(HOME, "HOME done")
 
         return lifted, in_container
@@ -476,10 +483,10 @@ class UR5eFinalController:
     def run(self):
         print()
         print("=" * 60)
-        print(f"  UR5e Final Controller v7 — Vision-Guided")
-        print(f"  {len(BALLS)} Balls | Robotiq 3F + Connector")
-        print(f"  OpenCV HSV detection + Webots Recognition API")
-        print(f"  Ref: GQ-CNN (Berkeley), GPD (ten Pas et al.)")
+        print("  UR5e Final Controller v8 — Color Sorting")
+        print("  Red Ball -> LEFT red container")
+        print("  Blue Ball -> RIGHT blue container")
+        print("  Robotiq 3F + Connector + OpenCV HSV")
         print("=" * 60)
 
         self.fingers_open()
@@ -496,14 +503,18 @@ class UR5eFinalController:
         results = []
         for i, b in enumerate(BALLS, 1):
             lifted, placed = self.pick_and_place(b, i, len(BALLS))
-            results.append((b["name"], lifted, placed))
+            results.append((b["name"], b["color_label"], lifted, placed))
 
         print(f"\n{'=' * 60}")
-        all_ok = all(l and p for _, l, p in results)
-        for name, lifted, placed in results:
+        all_ok = all(l and p for _, _, l, p in results)
+        for name, color, lifted, placed in results:
+            target = PLACE_POSES[color]["label"]
             status = "OK" if (lifted and placed) else "FAIL"
-            print(f"  [{status}] {name}: lifted={lifted}, in_container={placed}")
-        print(f"\n  {'SUCCESS! All balls placed!' if all_ok else 'Some balls failed.'}")
+            print(f"  [{status}] {name} -> {target}: lifted={lifted}, placed={placed}")
+        if all_ok:
+            print(f"\n  SUCCESS! Color sorting complete!")
+        else:
+            print(f"\n  Some balls failed to reach their container.")
         print("=" * 60)
 
         while self.robot.step(self.ts) != -1:
