@@ -1,18 +1,15 @@
 """
-UR5e Final Factory Controller v8 — Color-Sorting Dual-Ball Grasp
-================================================================
-Red ball -> LEFT red container, Blue ball -> RIGHT blue container.
-Uses Webots Camera Recognition API + OpenCV HSV color detection.
-
-References:
-  - BerkeleyAutomation/gqcnn (Dex-Net architecture inspiration)
-  - atenpas/gpd (grasp pose detection concepts)
-  - Webots Camera Recognition API + OpenCV integration
+UR5e Final Factory Controller v10 — Fast & Reliable Color Sorting
+=================================================================
+Red ball -> LEFT (RED) container, Blue ball -> RIGHT (BLUE) container.
+Optimized: higher joint velocity, shorter settle/wait times,
+reliable HOME transit between pick and place.
 """
 
 import sys
 import os
 import math
+import time as _time
 
 try:
     from controller import Supervisor
@@ -62,32 +59,33 @@ BASE_GRASP = [0.790, -0.500, 1.900, 0.171, 0.0, 0.0]
 BASE_ABOVE = [0.790, -0.800, 1.900, 0.471, 0.0, 0.0]
 REF_PICK_XY = (0.45, 0.0)
 
+MAX_VEL = 3.0
+FINGER_VEL = 1.2
+
 _sp_place_base = BASE_GRASP[0] - math.pi
 
-RED_CONTAINER_CENTER = (-0.5, 0.13)
-BLUE_CONTAINER_CENTER = (-0.5, -0.13)
+RED_CONTAINER_Y = -0.10
+BLUE_CONTAINER_Y = -0.30
 
-_red_y_off = math.atan2(RED_CONTAINER_CENTER[1], abs(RED_CONTAINER_CENTER[0]))
-_blue_y_off = math.atan2(BLUE_CONTAINER_CENTER[1], abs(BLUE_CONTAINER_CENTER[0]))
+_red_y_off = math.atan2(RED_CONTAINER_Y, 0.5)
+_blue_y_off = math.atan2(BLUE_CONTAINER_Y, 0.5)
 
 PLACE_POSES = {
     "RED": {
         "place":  [_sp_place_base - _red_y_off, -0.500, 1.900, 0.171, 0.0, 0.0],
         "above":  [_sp_place_base - _red_y_off, -0.800, 1.900, 0.471, 0.0, 0.0],
         "bounds": {"x_min": -0.615, "x_max": -0.385,
-                   "y_min": 0.025,  "y_max": 0.235, "z_min": 0.73},
+                   "y_min": -0.19,  "y_max": -0.01, "z_min": 0.73},
         "label":  "LEFT (RED)",
     },
     "BLUE": {
         "place":  [_sp_place_base - _blue_y_off, -0.500, 1.900, 0.171, 0.0, 0.0],
         "above":  [_sp_place_base - _blue_y_off, -0.800, 1.900, 0.471, 0.0, 0.0],
         "bounds": {"x_min": -0.615, "x_max": -0.385,
-                   "y_min": -0.235, "y_max": -0.025, "z_min": 0.73},
+                   "y_min": -0.39,  "y_max": -0.21, "z_min": 0.73},
         "label":  "RIGHT (BLUE)",
     },
 }
-
-MAX_VEL = 1.2
 
 BALLS = [
     {"def": "BALL1", "name": "Red Ball",   "start": [0.45,  0.08, BALL_CENTER_Z],
@@ -125,7 +123,7 @@ class UR5eFinalController:
         for fn in FINGER_MOTOR_NAMES:
             fm = self.robot.getDevice(fn)
             if fm:
-                fm.setVelocity(0.5)
+                fm.setVelocity(FINGER_VEL)
             self.finger_motors.append(fm)
 
         self.gps = self.robot.getDevice("tool_gps")
@@ -147,144 +145,47 @@ class UR5eFinalController:
         for _ in range(4):
             self.robot.step(self.ts)
 
-        has_recog = self.camera and self.camera.hasRecognition()
-        print(f"[INIT] Motors: {sum(1 for m in self.motors if m)}/6, "
-              f"Fingers: {sum(1 for f in self.finger_motors if f)}/3, "
-              f"GPS: {'OK' if self.gps else 'NO'}, "
-              f"Connector: {'OK' if self.connector else 'NO'}, "
-              f"Camera: {'OK' if self.camera else 'NO'}, "
-              f"Recognition: {'OK' if has_recog else 'NO'}, "
-              f"OpenCV: {'OK' if CV2_AVAILABLE else 'NO'}, "
-              f"Display: {'OK' if self.display else 'NO'}")
+        print(f"[INIT] Motors={sum(1 for m in self.motors if m)}/6 "
+              f"Fingers={sum(1 for f in self.finger_motors if f)}/3 "
+              f"GPS={'OK' if self.gps else 'NO'} "
+              f"Conn={'OK' if self.connector else 'NO'} "
+              f"Cam={'OK' if self.camera else 'NO'} "
+              f"CV2={'OK' if CV2_AVAILABLE else 'NO'} "
+              f"MaxVel={MAX_VEL}")
 
-    # ---- vision ----
+    # ---- vision (lightweight) ----
 
-    def scan_with_recognition(self):
-        """Use Webots Recognition API to detect objects visible to arm_camera."""
-        if not self.camera or not self.camera.hasRecognition():
-            return []
-        objects = self.camera.getRecognitionObjects()
-        results = []
-        for obj in objects:
-            pos = obj.getPosition()
-            colors = obj.getColors()
-            size = obj.getSize()
-            name = obj.getModel() if hasattr(obj, 'getModel') else "unknown"
-            results.append({
-                "position": list(pos),
-                "colors": list(colors) if colors else [],
-                "size": list(size) if size else [],
-                "position_on_image": list(obj.getPositionOnImage()),
-                "size_on_image": list(obj.getSizeOnImage()),
-            })
-        return results
-
-    def save_camera_frame(self, label="frame"):
-        """Save current camera frame to disk for debugging."""
-        if not CV2_AVAILABLE or not self.camera:
-            return
-        w = self.camera.getWidth()
-        h = self.camera.getHeight()
-        raw = self.camera.getImage()
-        if not raw:
-            return
-        img = np.frombuffer(raw, np.uint8).reshape((h, w, 4))
-        bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
-        out_dir = os.path.dirname(LOG_PATH)
-        path = os.path.join(out_dir, f"cam_{label}.png")
-        cv2.imwrite(path, bgr)
-        print(f"  [CAM] Saved frame: {path}")
-
-    def scan_with_opencv(self, ball_info):
-        """Use OpenCV HSV color masking to detect a specific ball color in camera image."""
+    def scan_opencv(self, ball_info):
         if not CV2_AVAILABLE or not self.camera:
             return None
-        w = self.camera.getWidth()
-        h = self.camera.getHeight()
+        w, h = self.camera.getWidth(), self.camera.getHeight()
         raw = self.camera.getImage()
         if not raw:
             return None
         img = np.frombuffer(raw, np.uint8).reshape((h, w, 4))
         bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
-
         mask = cv2.inRange(hsv, np.array(ball_info["hsv_low"]),
                                 np.array(ball_info["hsv_high"]))
-
         if ball_info["color_label"] == "RED":
             mask2 = cv2.inRange(hsv, np.array((170, 100, 100)),
                                      np.array((180, 255, 255)))
             mask = cv2.bitwise_or(mask, mask2)
-
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
-
         largest = max(contours, key=cv2.contourArea)
         area = cv2.contourArea(largest)
         if area < 20:
             return None
-
         M = cv2.moments(largest)
         cx = int(M["m10"] / M["m00"]) if M["m00"] > 0 else 0
         cy = int(M["m01"] / M["m00"]) if M["m00"] > 0 else 0
-
-        self._overlay_detection(bgr, largest, cx, cy, ball_info["color_label"], area)
-
         return {"cx": cx, "cy": cy, "area": area, "color": ball_info["color_label"]}
 
-    def _overlay_detection(self, bgr, contour, cx, cy, label, area):
-        """Draw detection overlay on the Display device."""
-        if not self.display or not CV2_AVAILABLE:
-            return
-        vis = bgr.copy()
-        color_map = {"RED": (0, 0, 255), "BLUE": (255, 0, 0)}
-        c = color_map.get(label, (0, 255, 0))
-        cv2.drawContours(vis, [contour], -1, c, 2)
-        cv2.circle(vis, (cx, cy), 4, (0, 255, 0), -1)
-        cv2.putText(vis, f"{label} A={area:.0f}", (cx - 30, cy - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
-
-        h, w = vis.shape[:2]
-        ir = self.display.imageNew(vis.tobytes(), self.display.BGRA,
-                                   w, h) if hasattr(self.display, 'BGRA') else None
-        if ir is None:
-            rgb = cv2.cvtColor(vis, cv2.COLOR_BGR2BGRA)
-            ir = self.display.imageNew(rgb.tobytes(), self.display.BGRA, w, h)
-        if ir:
-            self.display.imagePaste(ir, 0, 0, False)
-            self.display.imageDelete(ir)
-
-    _scan_count = 0
-
-    def vision_scan_report(self, ball_info):
-        """Run both recognition and OpenCV detection, print results."""
-        UR5eFinalController._scan_count += 1
-        self.save_camera_frame(f"{UR5eFinalController._scan_count}_{ball_info['color_label']}")
-        recog = self.scan_with_recognition()
-        cv_result = self.scan_with_opencv(ball_info)
-
-        print(f"\n  [VISION] Recognition API: {len(recog)} objects detected")
-        for i, obj in enumerate(recog):
-            p = obj["position"]
-            print(f"    Object {i}: pos=({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})"
-                  f"  img=({obj['position_on_image'][0]:.0f}, {obj['position_on_image'][1]:.0f})"
-                  f"  colors={obj['colors'][:3] if obj['colors'] else '?'}")
-
-        if cv_result:
-            print(f"  [VISION] OpenCV HSV: {cv_result['color']} detected"
-                  f"  center=({cv_result['cx']}, {cv_result['cy']})"
-                  f"  area={cv_result['area']:.0f}px")
-        else:
-            print(f"  [VISION] OpenCV HSV: {ball_info['color_label']} NOT detected")
-
-        return recog, cv_result
-
-    # ---- motion ----
+    # ---- motion primitives ----
 
     def reset_ball(self, ball_info):
         node = self.robot.getFromDef(ball_info["def"])
@@ -296,7 +197,7 @@ class UR5eFinalController:
             if rf:
                 rf.setSFRotation([0, 0, 1, 0])
             node.resetPhysics()
-        self.wait_ms(500)
+        self.wait_ms(200)
 
     def get_joints(self):
         return [s.getValue() if s else 0.0 for s in self.sensors]
@@ -313,7 +214,7 @@ class UR5eFinalController:
         for _ in range(max(1, ms // self.ts)):
             self.robot.step(self.ts)
 
-    def wait_reach(self, target, timeout_ms=15000, threshold=0.08):
+    def wait_reach(self, target, timeout_ms=12000, threshold=0.15):
         elapsed = 0
         while elapsed < timeout_ms:
             self.robot.step(self.ts)
@@ -323,20 +224,27 @@ class UR5eFinalController:
                 return True
         return False
 
-    def move_to(self, target, label="", settle_ms=2000):
+    def move(self, target, label="", settle_ms=500,
+             timeout_ms=None, threshold=None):
         for m in self.motors:
             if m:
                 m.setVelocity(MAX_VEL)
         self.set_joints(target)
-        reached = self.wait_reach(target)
+        kw = {}
+        if timeout_ms is not None:
+            kw["timeout_ms"] = timeout_ms
+        if threshold is not None:
+            kw["threshold"] = threshold
+        reached = self.wait_reach(target, **kw)
         self.wait_ms(settle_ms)
         gps = self.gps_pos()
-        tag = "OK" if reached else "TIMEOUT"
+        tag = "OK" if reached else "T/O"
         if label:
-            print(f"  [{tag:7s}] {label}  GPS=({gps[0]:.4f}, {gps[1]:.4f}, {gps[2]:.4f})")
+            print(f"  [{tag:3s}] {label}  ({gps[0]:.3f}, {gps[1]:.3f}, {gps[2]:.3f})")
         return gps, reached
 
-    def move_sequenced(self, target, label="", settle_ms=2000):
+    def move_seq(self, target, label="", settle_ms=500):
+        """Move with wrist-first sequencing to avoid stalls on large rotations."""
         for m in self.motors:
             if m:
                 m.setVelocity(MAX_VEL)
@@ -348,15 +256,15 @@ class UR5eFinalController:
             phase1[4] = target[4]
             phase1[5] = target[5]
             self.set_joints(phase1)
-            self.wait_reach(phase1, timeout_ms=8000)
-            self.wait_ms(500)
+            self.wait_reach(phase1, timeout_ms=6000)
+            self.wait_ms(100)
         self.set_joints(target)
         reached = self.wait_reach(target)
         self.wait_ms(settle_ms)
         gps = self.gps_pos()
-        tag = "OK" if reached else "TIMEOUT"
+        tag = "OK" if reached else "T/O"
         if label:
-            print(f"  [{tag:7s}] {label}  GPS=({gps[0]:.4f}, {gps[1]:.4f}, {gps[2]:.4f})")
+            print(f"  [{tag:3s}] {label}  ({gps[0]:.3f}, {gps[1]:.3f}, {gps[2]:.3f})")
         return gps, reached
 
     def fingers_open(self):
@@ -372,28 +280,26 @@ class UR5eFinalController:
     def grab(self):
         if not self.connector:
             return False
-        gps = self.gps_pos()
-        print(f"  >> GRAB GPS=({gps[0]:.4f}, {gps[1]:.4f}, {gps[2]:.4f})")
         self.connector.lock()
-        self.wait_ms(1500)
+        self.wait_ms(800)
         if self.connector.getPresence():
-            print(f"  >> ATTACHED")
+            print("  >> ATTACHED")
             return True
         for retry in range(3):
             self.connector.unlock()
-            self.wait_ms(300)
+            self.wait_ms(200)
             self.connector.lock()
-            self.wait_ms(1500)
+            self.wait_ms(800)
             if self.connector.getPresence():
                 print(f"  >> Retry {retry+1} ATTACHED")
                 return True
-        print(f"  >> GRAB FAILED")
+        print("  >> GRAB FAILED")
         return False
 
     def release(self):
         if self.connector:
             self.connector.unlock()
-            self.wait_ms(1000)
+            self.wait_ms(300)
 
     def get_ball_pos(self, ball_info):
         node = self.robot.getFromDef(ball_info["def"])
@@ -409,9 +315,10 @@ class UR5eFinalController:
                 b["y_min"] < pos[1] < b["y_max"] and
                 pos[2] > b["z_min"])
 
-    # ---- pick and place with vision ----
+    # ---- fast pick-and-place ----
 
     def pick_and_place(self, ball_info, idx, total):
+        t0 = _time.time()
         name = ball_info["name"]
         color = ball_info["color_label"]
         pick_y = ball_info["start"][1]
@@ -425,97 +332,79 @@ class UR5eFinalController:
         above_place = place_cfg["above"]
         target_label = place_cfg["label"]
 
-        print(f"\n{'=' * 60}")
-        print(f"  TASK {idx}/{total}: {name} ({color})")
-        print(f"  Pick Y={pick_y:+.3f}  SP offset={sp_delta:+.4f}")
-        print(f"  Place target: {target_label} container")
-        print(f"{'=' * 60}")
+        print(f"\n--- [{idx}/{total}] {name} -> {target_label} ---")
 
-        print("\n--- HOME ---")
-        self.move_to(HOME, "HOME")
-
-        print("\n--- ABOVE PICK (vision scan) ---")
+        # PICK phase
+        self.move(HOME, "HOME", settle_ms=300)
         self.fingers_open()
-        self.move_sequenced(above, "ABOVE PICK")
-        self.vision_scan_report(ball_info)
+        self.move_seq(above, "ABOVE PICK", settle_ms=300)
 
-        print("\n--- DESCEND TO GRASP ---")
-        self.move_to(grasp, "GRASP")
-        self.vision_scan_report(ball_info)
+        cv = self.scan_opencv(ball_info)
+        if cv:
+            print(f"  [CV] {cv['color']} center=({cv['cx']},{cv['cy']}) area={cv['area']:.0f}px")
 
-        print("\n--- GRAB ---")
+        self.move(grasp, "GRASP", settle_ms=800,
+                 timeout_ms=18000, threshold=0.08)
         grabbed = self.grab()
         self.fingers_close()
-        self.wait_ms(1500)
+        self.wait_ms(600)
 
-        print("\n--- LIFT ---")
-        self.move_to(above, "LIFT")
-        ball = self.get_ball_pos(ball_info)
-        lifted = ball[2] > BALL_CENTER_Z + 0.05
-        print(f"  {name} z={ball[2]:.3f}, lifted={'YES' if lifted else 'NO'}")
+        self.move(above, "LIFT", settle_ms=200)
+        ball_z = self.get_ball_pos(ball_info)[2]
+        lifted = ball_z > BALL_CENTER_Z + 0.05
+        print(f"  lifted={'YES' if lifted else 'NO'} z={ball_z:.3f}")
 
-        print("\n--- TRANSIT HOME ---")
-        self.move_sequenced(HOME, "HOME transit")
+        # PLACE phase — via HOME for safe transit
+        self.move_seq(HOME, "TRANSIT", settle_ms=200)
+        self.move_seq(above_place, "ABOVE PLACE", settle_ms=2500)
+        self.move(place_angles, "PLACE", settle_ms=3500)
 
-        print(f"\n--- ABOVE PLACE ({target_label}) ---")
-        self.move_sequenced(above_place, "ABOVE PLACE")
-
-        print(f"\n--- LOWER TO PLACE ({target_label}) ---")
-        self.move_to(place_angles, "PLACE")
-        self.wait_ms(4000)
-
-        print("\n--- RELEASE ---")
         self.release()
         self.fingers_open()
-        self.wait_ms(5000)
+        self.wait_ms(2000)
 
         ball_final = self.get_ball_pos(ball_info)
-        in_container = self.pos_in_container(ball_final, color)
-        print(f"\n  {name} final: ({ball_final[0]:.4f}, {ball_final[1]:.4f}, {ball_final[2]:.4f})")
-        print(f"  In {target_label}: {'YES' if in_container else 'NO'}")
+        ok = self.pos_in_container(ball_final, color)
+        dt = _time.time() - t0
+        print(f"  => {target_label}: {'YES' if ok else 'NO'} "
+              f"pos=({ball_final[0]:.3f},{ball_final[1]:.3f},{ball_final[2]:.3f}) "
+              f"[{dt:.1f}s]")
 
-        print("\n--- RETREAT & HOME ---")
-        self.move_to(above_place, "RETREAT")
-        self.move_sequenced(HOME, "HOME done")
-
-        return lifted, in_container
+        return lifted, ok
 
     def run(self):
+        t_total = _time.time()
+
         print()
-        print("=" * 60)
-        print("  UR5e Final Controller v8 — Color Sorting")
-        print("  Red Ball -> LEFT red container")
-        print("  Blue Ball -> RIGHT blue container")
-        print("  Robotiq 3F + Connector + OpenCV HSV")
-        print("=" * 60)
+        print("=" * 50)
+        print("  UR5e v10 — Fast Color Sorting")
+        print(f"  MaxVel={MAX_VEL} rad/s")
+        print("  Red->LEFT  Blue->RIGHT")
+        print("=" * 50)
 
         self.fingers_open()
-        self.wait_ms(500)
+        self.wait_ms(200)
         for b in BALLS:
             self.reset_ball(b)
-            print(f"  {b['name']} reset to ({b['start'][0]}, {b['start'][1]}, {b['start'][2]})")
-
-        print("\n--- INITIAL VISION SCAN FROM HOME ---")
-        self.move_to(HOME, "HOME")
-        for b in BALLS:
-            self.vision_scan_report(b)
+            print(f"  {b['name']} reset")
 
         results = []
         for i, b in enumerate(BALLS, 1):
             lifted, placed = self.pick_and_place(b, i, len(BALLS))
             results.append((b["name"], b["color_label"], lifted, placed))
 
-        print(f"\n{'=' * 60}")
+        # Return home after last ball
+        self.move(HOME, "FINAL HOME", settle_ms=200)
+
+        elapsed = _time.time() - t_total
+        print(f"\n{'=' * 50}")
         all_ok = all(l and p for _, _, l, p in results)
         for name, color, lifted, placed in results:
             target = PLACE_POSES[color]["label"]
-            status = "OK" if (lifted and placed) else "FAIL"
-            print(f"  [{status}] {name} -> {target}: lifted={lifted}, placed={placed}")
-        if all_ok:
-            print(f"\n  SUCCESS! Color sorting complete!")
-        else:
-            print(f"\n  Some balls failed to reach their container.")
-        print("=" * 60)
+            s = "OK" if (lifted and placed) else "FAIL"
+            print(f"  [{s}] {name} -> {target}")
+        print(f"\n  {'SUCCESS!' if all_ok else 'PARTIAL FAIL'}  Total: {elapsed:.1f}s")
+        print("=" * 50)
 
         while self.robot.step(self.ts) != -1:
             pass

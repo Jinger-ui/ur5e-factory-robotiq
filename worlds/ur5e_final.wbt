@@ -372,11 +372,11 @@ Table {
     colorOverride 0.35 0.35 0.33
   }
 }
-# ===== LEFT CONTAINER (RED) =====
+# ===== RED CONTAINER (left when viewed from behind) =====
 SolidBox {
-  translation -0.5 0.13 0.745
+  translation -0.5 -0.10 0.745
   name "red_container_bottom"
-  size 0.24 0.22 0.01
+  size 0.24 0.18 0.01
   appearance PBRAppearance {
     baseColor 0.85 0.15 0.1
     roughness 0.5
@@ -384,7 +384,7 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.5 0.025 0.80
+  translation -0.5 -0.19 0.80
   name "red_container_wall_front"
   size 0.24 0.01 0.10
   appearance PBRAppearance {
@@ -394,7 +394,7 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.5 0.235 0.80
+  translation -0.5 -0.01 0.80
   name "red_container_wall_back"
   size 0.24 0.01 0.10
   appearance PBRAppearance {
@@ -404,9 +404,9 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.615 0.13 0.80
+  translation -0.615 -0.10 0.80
   name "red_container_wall_left"
-  size 0.01 0.22 0.10
+  size 0.01 0.18 0.10
   appearance PBRAppearance {
     baseColor 0.85 0.15 0.1
     roughness 0.5
@@ -414,20 +414,20 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.385 0.13 0.80
+  translation -0.385 -0.10 0.80
   name "red_container_wall_right"
-  size 0.01 0.22 0.10
+  size 0.01 0.18 0.10
   appearance PBRAppearance {
     baseColor 0.85 0.15 0.1
     roughness 0.5
     metalness 0.2
   }
 }
-# ===== RIGHT CONTAINER (BLUE) =====
+# ===== BLUE CONTAINER (right when viewed from behind) =====
 SolidBox {
-  translation -0.5 -0.13 0.745
+  translation -0.5 -0.30 0.745
   name "blue_container_bottom"
-  size 0.24 0.22 0.01
+  size 0.24 0.18 0.01
   appearance PBRAppearance {
     baseColor 0.1 0.3 0.85
     roughness 0.5
@@ -435,7 +435,7 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.5 -0.235 0.80
+  translation -0.5 -0.39 0.80
   name "blue_container_wall_front"
   size 0.24 0.01 0.10
   appearance PBRAppearance {
@@ -445,7 +445,7 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.5 -0.025 0.80
+  translation -0.5 -0.21 0.80
   name "blue_container_wall_back"
   size 0.24 0.01 0.10
   appearance PBRAppearance {
@@ -455,9 +455,9 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.615 -0.13 0.80
+  translation -0.615 -0.30 0.80
   name "blue_container_wall_left"
-  size 0.01 0.22 0.10
+  size 0.01 0.18 0.10
   appearance PBRAppearance {
     baseColor 0.1 0.3 0.85
     roughness 0.5
@@ -465,9 +465,9 @@ SolidBox {
   }
 }
 SolidBox {
-  translation -0.385 -0.13 0.80
+  translation -0.385 -0.30 0.80
   name "blue_container_wall_right"
-  size 0.01 0.22 0.10
+  size 0.01 0.18 0.10
   appearance PBRAppearance {
     baseColor 0.1 0.3 0.85
     roughness 0.5
